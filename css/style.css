@@ -1,0 +1,78 @@
+/* OHT 天車模擬：介面樣式 */
+:root { --bg:#0f1419; --panel:rgba(16,22,30,.9); --line:rgba(255,255,255,.09); --fg:#e6edf3; --mut:#8b98a5; --acc:#38bdf8; }
+* { box-sizing:border-box; }
+html,body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--fg);
+  font-family: "PingFang TC","Microsoft JhengHei","Noto Sans TC",system-ui,sans-serif; }
+#app { position:fixed; inset:0; }
+#panel { position:fixed; top:12px; right:12px; width:320px; max-height:calc(100vh - 24px); overflow:auto;
+  background:var(--panel); backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+h1 { font-size:17px; margin:0 0 2px; }
+.sub { color:var(--mut); font-size:12px; margin-bottom:12px; }
+.stats { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:12px; }
+.stat { background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+.stat .k { font-size:11px; color:var(--mut); }
+.stat .v { font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
+.sec { font-size:12px; color:var(--mut); margin:12px 0 6px; letter-spacing:.04em; }
+.row { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:13px; }
+.row label { flex:0 0 74px; color:#c3ccd5; }
+.row input[type=range] { flex:1; accent-color:var(--acc); }
+.row .val { width:46px; text-align:right; font-variant-numeric:tabular-nums; }
+button { background:#1f2a36; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:5px 10px;
+  font:inherit; font-size:13px; cursor:pointer; }
+button:hover { background:#273544; }
+.cnt { min-width:28px; text-align:center; font-weight:600; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+td { padding:4px 4px; border-bottom:1px solid var(--line); white-space:nowrap; }
+tr.v { cursor:pointer; } tr.v:hover td { background:rgba(255,255,255,.04); }
+tr.sel td { background:rgba(56,189,248,.12); }
+.dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+.route { color:var(--mut); overflow:hidden; text-overflow:ellipsis; max-width:120px; }
+#log { font-size:11.5px; color:#b6c2ce; line-height:1.55; font-variant-numeric:tabular-nums; }
+#log div span { color:var(--mut); margin-right:6px; }
+.legend { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11.5px; color:#b6c2ce; }
+#hint { position:fixed; left:12px; bottom:12px; font-size:12px; color:var(--mut); background:rgba(16,22,30,.7);
+  padding:6px 10px; border-radius:8px; border:1px solid var(--line); }
+#followBar { position:fixed; left:12px; top:12px; display:none; align-items:center; gap:10px; font-size:13px;
+  background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:7px 10px; }
+#followBar b { color:var(--acc); }
+#followBar button:disabled { opacity:.4; cursor:not-allowed; }
+#btnOnline.off { border-color:#f59e0b; color:#fbbf24; }
+#toggle { display:none; }
+/* 異常事件 */
+.alarmBtns { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; }
+.alarmBtns button { border-color:rgba(239,68,68,.45); }
+.alarmBtns button:hover { background:#3a1f24; }
+.alarm { border:1px solid rgba(239,68,68,.5); background:rgba(127,29,29,.25); border-radius:8px; padding:7px 9px; margin:6px 0; font-size:12.5px; }
+.alarm .btns, #alarmCard .btns { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+.mut { color:var(--mut); font-size:12px; }
+button.ok { background:#14532d; border-color:#22c55e66; }
+button.ok:hover { background:#166534; }
+#alarmBanner { display:none; position:fixed; top:12px; left:50%; transform:translateX(-50%); background:#b91c1c; color:#fff;
+  font-weight:700; padding:8px 16px; border-radius:10px; cursor:pointer; animation:blink 1s infinite; z-index:5; }
+@keyframes blink { 50% { background:#7f1d1d; } }
+#alarmCard { display:none; position:fixed; left:12px; top:60px; width:380px; max-height:calc(100vh - 80px); overflow:auto; z-index:6;
+  background:var(--panel); border:1px solid rgba(239,68,68,.6); border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.6; }
+#alarmCard .hd { display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:15px; color:#fca5a5; margin-bottom:4px; }
+#alarmCard h4 { margin:10px 0 2px; font-size:13px; color:#7dd3fc; }
+#alarmCard p { margin:0; }
+#alarmCard ol { margin:2px 0; padding-left:20px; }
+#alarmCard .impact { margin:6px 0 0; padding:6px 8px 6px 22px; background:rgba(255,255,255,.04); border-radius:6px; color:#fde68a; }
+@media (max-width:720px) { #alarmCard { left:8px; right:8px; width:auto; top:56px; max-height:50vh; } }
+@media (max-width:720px) {
+  #panel { top:auto; bottom:8px; left:8px; right:8px; width:auto; max-height:44vh; }
+  #hint { display:none; }
+}
+/* 優先級 */
+.priBox .alarmBtns button { border-color:rgba(249,115,22,.5); }
+.priBox .alarmBtns button:hover { background:#3a2614; }
+.pri1 { color:#fb923c; font-weight:600; } .pri2 { color:#f87171; font-weight:700; }
+/* 通訊 */
+.commBox .alarmBtns { grid-template-columns:1fr 1fr; }
+.commBox .alarmBtns button { border-color:rgba(56,189,248,.5); }
+.commBox .alarmBtns button:hover { background:#10304a; }
+/* 車輛維修區 */
+.maintBox #maintInfo { font-size:12px; line-height:1.6; margin-bottom:6px; }
+.maintBox .alarmBtns { grid-template-columns:1fr 1fr 1fr; }
+.maintBox .alarmBtns button { border-color:rgba(34,211,238,.45); }
+.maintBox .alarmBtns button:hover { background:#123540; }
+#maintInfo + .alarmBtns { grid-template-columns:1fr 1fr; }

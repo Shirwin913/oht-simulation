@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OHT 天車 3D 模擬</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app"></div>
+
+<div id="followBar">跟隨中：<b id="followName"></b><span id="followState" style="color:var(--mut)"></span><button id="btnOnline">切下線</button><button id="btnVehPm" disabled title="要先切下線才能下保養指令">送保養</button><button id="btnUnfollow">取消跟隨</button></div>
+
+<div id="panel">
+  <h1>OHT 天車模擬</h1>
+  <div class="sub">晶圓廠 AMHS · 單向環狀軌道 · FOUP 自動搬運</div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">模擬時間</div><div class="v" id="simTime">00:00:00</div></div>
+    <div class="stat"><div class="k">完成搬運</div><div class="v" id="done">0</div></div>
+    <div class="stat"><div class="k">每小時搬運量</div><div class="v" id="tph">–</div></div>
+    <div class="stat"><div class="k">平均等車時間</div><div class="v" id="avgWait">–</div></div>
+    <div class="stat"><div class="k">等待派車</div><div class="v" id="queue">0</div></div>
+    <div class="stat"><div class="k">搬運中任務</div><div class="v" id="active">0</div></div>
+    <div class="stat"><div class="k">平均搬運週期</div><div class="v" id="avgCycle">–</div></div>
+    <div class="stat"><div class="k">FOUP 總數</div><div class="v" id="foupTotal">0</div></div>
+    <div class="stat"><div class="k">STB 儲格使用</div><div class="v" id="stbUse">–</div></div>
+    <div class="stat"><div class="k">天車數</div><div class="v" id="vehTotal">0</div></div>
+  </div>
+
+  <div class="sec">控制</div>
+  <div class="row"><button id="btnPause">⏸ 暫停</button><button id="btnView">重設視角</button>
+    <label style="flex:auto;display:flex;align-items:center;gap:5px;justify-content:flex-end"><input type="checkbox" id="showLabels" checked>標籤</label>
+    <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="xray">透視</label></div>
+  <div class="row"><label>模擬速度</label><input type="range" id="speed" min="0.5" max="20" step="0.5" value="2"><span class="val" id="speedVal">2x</span></div>
+  <div class="row"><label>加工時間</label><input type="range" id="procTime" min="60" max="3000" step="60" value="1500"><span class="val" id="procVal">1500s</span></div>
+  <div class="row"><label>最高車速</label><input type="range" id="vmax" min="1" max="6" step="0.5" value="3.5"><span class="val" id="vmaxVal">3.5</span></div>
+  <div class="row"><label>捲揚速度</label><input type="range" id="hoistSpd" min="0.5" max="4" step="0.1" value="2.2"><span class="val" id="hoistVal">2.2</span></div>
+  <div class="row"><label>天車數量</label><button id="btnRemove">−</button><span class="cnt" id="vehCount">0</span><button id="btnAdd">＋</button></div>
+
+  <div class="sec">異常事件（教學）</div>
+  <div class="alarmBtns">
+    <button data-alarm="vehicle">天車故障停車</button><button data-alarm="transfer">取放貨異常</button>
+    <button data-alarm="machine">機台當機</button><button data-alarm="track">軌道區段封鎖</button>
+    <button data-alarm="ap">無線 AP 斷線</button>
+  </div>
+  <div class="row"><label style="flex:auto;display:flex;align-items:center;gap:6px"><input type="checkbox" id="autoAlarm">隨機自動發生（約每 2～4 分鐘，會自動復歸）</label></div>
+  <div id="alarmList"></div>
+
+  <div class="sec">優先級與路權</div>
+  <div class="maintBox priBox"><div id="priInfo" class="mut"></div>
+    <div class="alarmBtns"><button id="btnHot">插一筆特急</button><button id="btnPriInfo">說明</button><button id="btnParkInfo">休息／推車</button></div></div>
+
+  <div class="sec">通訊（無線 AP／E84）</div>
+  <div class="maintBox commBox"><div id="commInfo" class="mut"></div>
+    <div class="row"><label style="flex:auto;display:flex;align-items:center;gap:6px"><input type="checkbox" id="showComm">顯示無線網路（AP 範圍、天車連線）</label></div>
+    <div class="alarmBtns"><button id="btnCommInfo">無線 AP 說明</button><button id="btnE84Info">E84 交握說明</button></div></div>
+
+  <div class="sec">車輛維修區（捲揚機 × 2）</div>
+  <div class="maintBox"><div id="maintInfo" class="mut">空閒</div>
+    <div class="alarmBtns"><button id="btnPm">天車送保養</button><button id="btnMaintInfo">說明</button><button id="btnMaintView">看維修區 1</button><button id="btnMaintView2">看維修區 2</button></div></div>
+
+  <div class="sec">燈號說明</div>
+  <div class="legend">
+    <span><i class="dot" style="background:#22c55e"></i>加工中</span>
+    <span><i class="dot" style="background:#f59e0b"></i>待取貨</span>
+    <span><i class="dot" style="background:#3b82f6"></i>預約放貨</span>
+    <span><i class="dot" style="background:#a855f7"></i>STB 暫存中</span>
+    <span><i class="dot" style="background:#d9dde1"></i>車底淺灰小板＝防墜板</span>
+    <span><i class="dot" style="background:#4b5563"></i>空 Port</span>
+    <span><i class="dot" style="background:#ef4444"></i>異常（閃爍）</span>
+  </div>
+
+  <div class="sec">天車狀態（點選可跟隨）</div>
+  <div style="max-height:240px;overflow:auto"><table><tbody id="vehList"></tbody></table></div>
+
+  <div class="sec">事件紀錄</div>
+  <div id="log"></div>
+</div>
+
+<div id="alarmBanner"></div>
+<div id="alarmCard"></div>
+<div id="hint">左鍵拖曳旋轉 · 右鍵平移 · 滾輪縮放 · 點擊天車跟隨</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="js/config.js"></script>
+<script src="js/network.js"></script>
+<script src="js/scene.js"></script>
+<script src="js/track.js"></script>
+<script src="js/factory.js"></script>
+<script src="js/foup.js"></script>
+<script src="js/vehicle.js"></script>
+<script src="js/simulation.js"></script>
+<script src="js/alarms.js"></script>
+<script src="js/maintenance.js"></script>
+<script src="js/comm.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
