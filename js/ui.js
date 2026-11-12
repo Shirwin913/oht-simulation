@@ -23,6 +23,7 @@ function updateUI() {
       `<td>${stateText(v)}</td><td class="route" title="${route}">${pr}${route}</td><td style="text-align:right">${v.v.toFixed(1)}</td></tr>`;
   }).join('');
   renderAlarms();
+  renderHmi();
   const nc = vehicles.filter(v => v.noComm), ho = vehicles.filter(v => v.handover > 0).length;
   $('commInfo').innerHTML = `AP：${aps.length - aps.filter(a => a.down).length}／${aps.length} 台正常 · 漫遊（換 AP）${roamCount} 次` +
     `<br>通訊中斷：<b style="color:${nc.length ? '#f87171' : 'inherit'}">${nc.length} 台</b>${nc.length ? `（${nc.map(v => v.id).join('、')}）` : ''}${ho ? ` · 切換 AP 中 ${ho} 台` : ''}` +
@@ -57,6 +58,7 @@ $('vehList').addEventListener('click', e => {
   const v = vehicles.find(x => x.id === tr.dataset.id); setFollow(v === followed ? null : v);
 });
 $('btnUnfollow').onclick = () => setFollow(null);
+$('btnHmi').onclick = () => { if (followed) openHmi(followed, 'main'); };
 $('btnOnline').onclick = () => { if (followed) setOffline(followed, !followed.offline); updateUI(); };
 $('btnVehPm').onclick = () => { if (followed) vehPm(followed); updateUI(); };
 // 異常事件

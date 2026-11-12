@@ -138,7 +138,7 @@ function curveLimit(v, vTop, pa) {
 }
 
 function updateVehicle(v, dt) {
-  if (v.fault) { v.v = 0; v.yielding = false; return; }             // 異常中：停在原地等人處理（alarms.js）
+  if (v.fault || v.manual || v.estop) { v.v = 0; v.yielding = false; v.waitT = 0; return; }   // 異常中、手動模式：停在原地等人處理（alarms.js、hmi.js）
   if (pendingTransferFault && (v.state === 'grip' || v.state === 'release')) { raiseTransferFault(v); return; }
   const st = v.state;
   if (st === 'idle' || st === 'toPick' || st === 'toDrop' || st === 'toMaint') {
@@ -174,7 +174,7 @@ function updateVehicle(v, dt) {
     if (gap < Infinity) move = Math.min(move, Math.max(0, gap - 0.25));
     if (move > dT) move = dT;
     if (move < v.v * dt) v.v = move / dt;
-    advance(v, move);
+    advance(v, move); v.odo = (v.odo || 0) + move;
     v.waitT = v.yielding && v.v < 0.05 ? (v.waitT || 0) + dt : 0;     // 在匯流點前等了多久
     if (v.target && !v.route.length && v.seg === v.target.seg && v.target.d - v.d < 0.003) {
       v.d = v.target.d; v.v = 0; v.target = null;
@@ -403,7 +403,7 @@ function dispatch() {
     }
   }
   // 2. 派車：每筆任務派給沿軌道最近的閒置天車（先建立的任務先派）
-  const idle = vehicles.filter(v => v.state === 'idle' && !v.maintReq && !v.fault && !v.offline && commOk(v));   // 通訊中斷的車收不到指令   // 下線的車不派任務   // 排隊等維修的車不派任務
+  const idle = vehicles.filter(v => v.state === 'idle' && !v.maintReq && !v.fault && !v.offline && !v.manual && commOk(v));   // 通訊中斷的車收不到指令   // 下線的車不派任務   // 排隊等維修的車不派任務
   const order = jobs.filter(j => !j.vehicle).sort((a, b) => b.pri - a.pri || a.created - b.created);   // 特急 → 急件 → 一般，同級先來先派
   for (const job of order) {
     if (!idle.length) break;

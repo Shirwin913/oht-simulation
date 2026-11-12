@@ -72,7 +72,7 @@ function loop() {
   if (!paused) {
     const sd = dt * speed, n = Math.max(1, Math.ceil(sd / 0.04)), h = sd / n;
     for (let i = 0; i < n; i++) {
-      simTime += h; stepPorts(h); stepVehicles(h); commTick(h);
+      simTime += h; stepPorts(h); stepVehicles(h); commTick(h); hmiTick(h);
       dispT += h; if (dispT >= 0.5) { dispT = 0; dispatch(); }
     }
   }

@@ -162,7 +162,7 @@ function stepMaintQueue() {
   for (let i = maintQueue.length - 1; i >= 0; i--) if (!vehicles.includes(maintQueue[i])) maintQueue.splice(i, 1);
   for (const L of LIFTERS) if (L.busy && !vehicles.includes(L.busy)) { L.busy = null; L.rail = 0; }
   for (const v of maintQueue.slice()) {
-    if (v.state !== 'idle' || v.fault || v.job || !commOk(v)) continue;   // 通訊中斷的車收不到「去維修區」的指令
+    if (v.state !== 'idle' || v.fault || v.manual || v.job || !commOk(v)) continue;   // 通訊中斷的車收不到「去維修區」的指令
     const L = nearestFreeLifter(v);
     if (!L) break;                                               // 兩台都在忙
     if (!setTarget(v, L)) continue;

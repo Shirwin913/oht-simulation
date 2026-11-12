@@ -94,6 +94,7 @@ function raiseAlarm(type, info, target, label, opts = {}) {
   a.marker = alarmMarker(`⚠ ${info.code}`);
   alarms.push(a);
   log(`⚠ ${info.code} ${info.title}：${label}`);
+  hmiOnAlarm(a);
   return a;
 }
 const MOVING = ['idle', 'toPick', 'toDrop'];
@@ -194,7 +195,10 @@ function clearAlarm(a) {
   const i = alarms.indexOf(a); if (i < 0) return;
   alarms.splice(i, 1);
   scene.remove(a.marker);
-  if (a.type === 'vehicle' || a.type === 'transfer') a.target.fault = null;
+  if (a.type === 'vehicle' || a.type === 'transfer') {
+    const v = a.target; v.fault = null; v.estop = false;
+    if (v.servo) Object.keys(v.servo).forEach(k => v.servo[k] = true);   // 直接按「復歸」（沒走操作介面）：伺服一起恢復
+  }
   if (a.type === 'machine') a.target.down = null;
   if (a.type === 'ap') a.target.down = null;
   if (a.type === 'track') { a.target.blocked = null; scene.remove(a.barrier); computeRoutes(); replanAll(null); }
@@ -276,11 +280,12 @@ function renderAlarmCard() {
     <ul class="impact">${alarmImpact(a).map(t => `<li>${t}</li>`).join('')}</ul>
     <h4>現場一般怎麼處理</h4><ol>${a.info.steps.map(t => `<li>${t}</li>`).join('')}</ol>
     <p class="mut">以上是一般 AMHS 的通用做法，實際處理以各廠 SOP 為準。</p>
-    <div class="btns"><button id="acView">查看位置</button>${a.type === 'vehicle' ? '<button id="acMaint">送維修區</button>' : ''}<button id="acClear" class="ok">處理完成，復歸</button></div>
+    <div class="btns"><button id="acView">查看位置</button>${a.type === 'vehicle' || a.type === 'transfer' ? '<button id="acHmi" class="hmiBtn">開操作介面（現場排除）</button>' : ''}${a.type === 'vehicle' ? '<button id="acMaint">送維修區</button>' : ''}<button id="acClear" class="ok">處理完成，復歸</button></div>
     ${a.type === 'vehicle' ? '<p class="mut">「復歸」＝現場排除後直接重新上線；「送維修區」＝復歸後開到車輛維修區，用捲揚機放到地面檢修。</p>' : ''}`;
   c.style.display = 'block';
   document.getElementById('acClose').onclick = closeAlarmCard;
   document.getElementById('acView').onclick = () => focusAlarm(a);
+  if (a.type === 'vehicle' || a.type === 'transfer') document.getElementById('acHmi').onclick = () => { const v = a.target; closeAlarmCard(); setFollow(v); openHmi(v, 'quick'); };
   document.getElementById('acClear').onclick = () => clearAlarm(a);
   if (a.type === 'vehicle') document.getElementById('acMaint').onclick = () => { const v = a.target; sendToMaint(a); openMaintCard(); focusMaint(LIFTERS.slice().sort((p, q) => planRoute(v, p.seg, p.d).dist - planRoute(v, q.seg, q.d).dist)[0]); };
 }
