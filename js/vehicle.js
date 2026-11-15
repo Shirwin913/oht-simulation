@@ -71,7 +71,29 @@ const VG = (() => {
   gx.fillStyle = '#7d848b'; [[8, 8], [120, 8], [8, 56], [120, 56], [34, 20], [94, 20], [34, 44], [94, 44]].forEach(([a, b]) => { gx.beginPath(); gx.arc(a, b, 2, 0, 7); gx.fill(); });
   const guardTex = new THREE.CanvasTexture(gc);
   const guardGeo = new THREE.BoxGeometry(GUARD_L, 0.02, GUARD_W);
+  // ---------- 外殼花紋（照使用者模型外殼上的花紋）：斜向散熱槽一整片＋下面一排圓孔＋上方維修蓋板框 ----------
+  //   貼在前後外殼四個斜角面上；外殼最底下一圈深色護邊
+  const pc = document.createElement('canvas'); pc.width = 256; pc.height = 320;
+  const px = pc.getContext('2d');
+  px.strokeStyle = 'rgba(120,126,132,.85)'; px.lineWidth = 3; px.strokeRect(30, 14, 196, 70);            // 維修蓋板框
+  [[44, 28], [212, 28], [44, 70], [212, 70]].forEach(([x, y]) => { px.fillStyle = '#9aa1a8'; px.beginPath(); px.arc(x, y, 4, 0, 7); px.fill(); });
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {                                            // 斜向散熱槽
+    const x0 = 34 + c * 34 + r * 6, y0 = 110 + r * 34;
+    px.save(); px.translate(x0, y0); px.rotate(-Math.PI / 4);
+    px.fillStyle = '#4f5459'; px.fillRect(-15, -4, 30, 8);
+    px.fillStyle = 'rgba(255,255,255,.75)'; px.fillRect(-15, 4, 30, 2);                                // 槽下緣的亮邊（看起來有深度）
+    px.restore();
+  }
+  for (let c = 0; c < 7; c++) { const x = 40 + c * 30; px.fillStyle = '#4f5459'; px.beginPath(); px.arc(x, 270, 6, 0, 7); px.fill();
+    px.fillStyle = 'rgba(255,255,255,.7)'; px.beginPath(); px.arc(x, 273, 6, 0.2, Math.PI - 0.2); px.lineWidth = 1.5; px.strokeStyle = 'rgba(255,255,255,.7)'; px.stroke(); }
+  const patTex = new THREE.CanvasTexture(pc); patTex.anisotropy = 4;
+  const patMat = new THREE.MeshStandardMaterial({ map: patTex, transparent: true, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
+  const patGeo = new THREE.PlaneGeometry(0.3, 0.375);
+  // 底部深色護邊（外殼形狀往外擴一點的薄片）
+  const trimGeo = new THREE.ExtrudeGeometry(sh, { depth: 0.055, bevelEnabled: true, bevelThickness: 0.004, bevelSize: B + 0.008, bevelSegments: 1 });
+  trimGeo.rotateX(-Math.PI / 2); trimGeo.translate(0, BODY_BOT + 0.004, 0);
   return {
+    patMat, patGeo, trimGeo, trimMat: mat(0x26282d, { roughness: 0.7 }),
     endPanel, capGeo, visorGeo, visorLedGeo, visorMat: mat(0xdfe3e6, { roughness: 0.45, metalness: 0.15 }), guardGeo,
     guardMat: new THREE.MeshStandardMaterial({ map: guardTex, metalness: 0.35, roughness: 0.5 }),
     white: mat(0xf3f4f2, { roughness: 0.45 }), offWhite: mat(0xe3e6e6, { roughness: 0.5 }),
@@ -81,6 +103,28 @@ const VG = (() => {
     tire: mat(0x2a2c2e, { roughness: 0.9 }), hub: mat(0xb7bec5, { metalness: 0.7 }),
   };
 })();
+// ---------- 天車外形：使用者和同事做的 3D 模型（js/vehicle_model.js，由 OHT.glb 轉出）----------
+//   body：車體（前後外殼、頂蓋）；shift：側移＋捲揚單元（跟著側移動）；grip：夾爪（跟著捲揚上下，原點在夾爪底面）
+//   near 近看用、far 遠看用（簡化）。每個三角形一個顏色，用頂點色畫，所以一個部件只要一次 draw call
+const MODEL = (() => {
+  const b64 = str => { const bin = atob(str), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; };
+  const geo = e => {
+    const q = new Int16Array(b64(e.p)), c = new Uint8Array(b64(e.c));
+    const pos = new Float32Array(q.length), col = new Float32Array(q.length);
+    for (let i = 0; i < q.length; i++) pos[i] = q[i] / 10000;
+    for (let t = 0; t < e.n; t++) for (let v = 0; v < 3; v++) for (let k = 0; k < 3; k++) col[t * 9 + v * 3 + k] = c[t * 3 + k] / 255;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals(); return g;
+  };
+  const M = OHT_MODEL.meta, out = { meta: M, near: {}, far: {} };
+  for (const k of ['body', 'shift', 'grip']) { out.near[k] = geo(OHT_MODEL.near[k]); out.far[k] = geo(OHT_MODEL.far[k]); }
+  out.mat = vcMat({ roughness: 0.5, metalness: 0.15 });
+  // 前後狀態燈：貼在前後外殼頂部下緣的一條燈帶
+  out.ledGeo = new THREE.BoxGeometry(0.012, 0.035, 0.62);
+  return out;
+})();
+
 function createVehicle(seg, d) {
   const id = 'V' + String(++vehSeq).padStart(2, '0');
   const accent = new THREE.Color().setHSL((vehSeq * 0.137) % 1, 0.7, 0.55);
@@ -107,9 +151,10 @@ function createVehicle(seg, d) {
     });
     return b;
   });
+  // ---------- 外殼：原本的造型（八邊形前後外殼、車頂蓋、頂部防撞板＋LED）----------
+  const M = MODEL.meta;
   const capMat = mat(0xf3f4f2, { roughness: 0.45, emissive: accent, emissiveIntensity: 0 });
   const cap = add(new THREE.Mesh(VG.capGeo, capMat), 0, 0, 0); cap.castShadow = true;
-  // 前後頂部防撞板＋板子下緣的綠色 LED（狀態燈）
   const ledMat = new THREE.MeshStandardMaterial({ color: 0x0a2a12, emissive: 0x39ff6a, emissiveIntensity: 1.3 });
   const pads = [1, -1].map(k => {
     const pd = add(new THREE.Mesh(VG.visorGeo, VG.visorMat), k * END_X, 0, 0); pd.castShadow = true;
@@ -117,11 +162,19 @@ function createVehicle(seg, d) {
     if (k < 0) { pd.rotation.y = Math.PI; led.rotation.y = Math.PI; }
     return pd;
   });
-  const OX = END_X + END_T / 2;                                           // 車頭外側表面
-  // 前後端板（+x 為車頭）
+  const OX = END_X + END_T / 2;
   const front = new THREE.Mesh(VG.endPanel, VG.white); front.castShadow = true; add(front, END_X, 0, 0);
   const rear = new THREE.Mesh(VG.endPanel, VG.white); rear.castShadow = true; add(rear, -END_X, 0, 0); rear.rotation.y = Math.PI;
   [-1, 1].forEach(k => add(box(2 * (END_X - END_T / 2) + 0.04, 0.04, 0.05, VG.gray), 0, BODY_BOT + 0.02, k * 0.47)); // 底部連接框
+  [1, -1].forEach(k => {                                                  // 底部深色護邊＋四個斜角面上的花紋
+    const tr = add(new THREE.Mesh(VG.trimGeo, VG.trimMat), k * END_X, 0, 0); if (k < 0) tr.rotation.y = Math.PI;
+    [-1, 1].forEach(sz => {
+      const n = [k / Math.SQRT2, sz / Math.SQRT2];                         // 斜角面的朝外方向
+      const cx = END_T / 2 - END_CHAMFER / 2, cz = BODY_W / 2 - END_CHAMFER / 2;
+      const d = add(new THREE.Mesh(VG.patGeo, VG.patMat), k * (END_X + cx) + n[0] * 0.004, -0.8, sz * cz + n[1] * 0.004);
+      d.rotation.y = Math.atan2(n[0], n[1]);
+    });
+  });
   add(box(0.02, 0.12, 0.12, VG.black), faceX(-1.0) + 0.005, -1.0, 0.1);   // 車頭感測窗
   add(box(0.06, 0.12, 0.14, VG.orange), faceX(-1.5) + 0.02, -1.5, 0.1);   // 前方障礙物感測器
   add(box(0.02, 0.05, 0.05, VG.red), faceX(-1.5) + 0.055, -1.5, 0.1);
@@ -129,52 +182,32 @@ function createVehicle(seg, d) {
   const plateGeo = new THREE.PlaneGeometry(0.34, 0.19);
   const pf = add(new THREE.Mesh(plateGeo, plateMat), OX + 0.006, -0.65, 0); pf.rotation.y = Math.PI / 2;
   const pr = add(new THREE.Mesh(plateGeo, plateMat), -OX - 0.006, -0.65, 0); pr.rotation.y = -Math.PI / 2;
+  add(box(1.12, 0.05, 0.92, VG.gray), 0, -0.265, 0);                       // 側移固定節（吊在車頂下）
+  const body = cap;
 
-  // ---------- 側移機構：多節伸縮滑軌（像抽屜滑軌一節疊一節），整個捲揚單元裝在最下面的滑台上 ----------
-  //   固定節（車體）→ 第 1 節（移動 1/3）→ 第 2 節（移動 2/3）→ 滑台＋捲揚單元（移動全程）
-  add(box(1.12, 0.05, 0.92, VG.gray), 0, -0.265, 0);                                 // 固定節
+  // ---------- 側移＋捲揚單元（模型）：整個單元跟著側移左右移動 ----------
+  //   多節伸縮滑軌：固定節 → 第 1 節（移動 1/3）→ 第 2 節（移動 2/3）→ 側移＋捲揚單元（模型，移動全程）
   const stageMats = [mat(0xc3c9cf, { metalness: 0.6, roughness: 0.35 }), mat(0xaeb5bc, { metalness: 0.6, roughness: 0.35 })];
   const stages = [[1.08, -0.305, 1 / 3], [1.04, -0.345, 2 / 3]].map(([w, y, f], i) => {
     const st = add(box(w, 0.04, 0.88 - i * 0.02, stageMats[i]), 0, y, 0);
-    [-1, 1].forEach(k => { const lip = box(0.02, 0.06, 0.88 - i * 0.02, VG.gray); lip.position.x = k * w / 2; st.add(lip); }); // 兩側導軌邊
+    [-1, 1].forEach(k => { const lip = box(0.02, 0.06, 0.88 - i * 0.02, VG.gray); lip.position.x = k * w / 2; st.add(lip); });
     st.userData.f = f; return st;
   });
   const shiftG = new THREE.Group(); g.add(shiftG);
   const sAdd = (m, x, y, z) => { m.position.set(x, y, z); shiftG.add(m); return m; };
-
-  // ---------- 捲揚機構：機構箱（兩側開放可看到捲揚鼓）+ 捲揚鼓 + 兩條吊帶 ----------
-  // 捲揚單元：封閉的實心盒子，裝在最下面的滑台上；捲揚鼓在盒子裡（勾「透視」才看得到）
-  const housing = sAdd(box(1.1, BOX_H, 0.86, VG.offWhite), 0, BOX_Y, 0);
-  [-1, 1].forEach(k => {                                                 // 盒子側面的面板細節
-    sAdd(box(0.36, 0.14, 0.01, VG.black), -0.25, BOX_Y + 0.04, k * 0.435);
-    sAdd(box(0.18, 0.08, 0.01, VG.gray), 0.25, BOX_Y + 0.07, k * 0.435);
-    sAdd(box(1.0, 0.012, 0.01, VG.gray), 0, BOX_Y - 0.11, k * 0.435);    // 分模線
-  });
-  const drum = new THREE.Group(); sAdd(drum, 0, BOX_Y, 0);
-  const drumCyl = new THREE.Mesh(new THREE.CylinderGeometry(DRUM_R, DRUM_R, 0.95, 20), mat(0x9aa3ab, { metalness: 0.7, roughness: 0.3 }));
+  const housing = sAdd(new THREE.Mesh(MODEL.near.shift, MODEL.mat), 0, UNIT_DY, 0); housing.castShadow = true;
+  // 捲揚鼓：在捲揚盒裡（勾「透視」才看得到）
+  const drum = new THREE.Group(); sAdd(drum, 0, M.hoistBoxY + UNIT_DY, 0);
+  const drumCyl = new THREE.Mesh(new THREE.CylinderGeometry(DRUM_R, DRUM_R, 0.8, 20), mat(0x9aa3ab, { metalness: 0.7, roughness: 0.3 }));
   drumCyl.rotation.z = Math.PI / 2; drum.add(drumCyl);
-  [-0.15, 0.15].forEach(x => {                                            // 鼓上捲著的吊帶（深色）＋轉動標記
-    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(DRUM_R + 0.012, DRUM_R + 0.012, 0.06, 20), VG.belt);
-    wrap.rotation.z = Math.PI / 2; wrap.position.x = x; drum.add(wrap);
-  });
-  const mark = box(0.9, 0.025, 0.03, mat(0xf2c94c)); mark.position.y = DRUM_R + 0.005; drum.add(mark);
-  // 夾爪單元：方形大平板（約 FOUP 頂部大小）＋上方小平板，由三條吊帶吊著（三點吊掛）
-  const gripper = sAdd(box(0.6, 0.06, 0.6, 0x3a4048), 0, GRIP_REST, 0);
-  const gTop = box(0.42, 0.03, 0.42, VG.gray); gTop.position.y = 0.045; gripper.add(gTop);
-  BELT_POS.forEach(([a, b]) => {                                       // 吊帶固定座
-    const clamp = box(0.07, 0.04, 0.07, VG.gray); clamp.position.set(a * BELT_XY, 0.05, b * BELT_XY); gripper.add(clamp);
-  });
-  const beltMat = mat(0xd3d7db, { roughness: 0.6 });                     // 吊帶（淺色扁帶）
-  const belts = BELT_POS.map(([a, b]) =>
-    sAdd(new THREE.Mesh(new THREE.BoxGeometry(0.045, 1, 0.008), beltMat), a * BELT_XY, 0, b * BELT_XY));
-
-  // ---------- 夾爪：兩片 L 形爪，閉合時勾住 FOUP 頂部 flange ----------
-  const fingers = [-1, 1].map(k => {
-    const f = new THREE.Group(); gripper.add(f);
-    const plate = box(0.3, 0.12, 0.03, VG.gray); plate.position.y = -0.08; f.add(plate);
-    const lip = box(0.3, 0.025, 0.07, VG.gray); lip.position.set(0, -0.13, -k * 0.035); f.add(lip);
-    f.userData.k = k; return f;
-  });
+  const mark = box(0.75, 0.025, 0.03, mat(0xf2c94c)); mark.position.y = DRUM_R + 0.005; drum.add(mark);
+  // 夾爪（模型）：跟著捲揚上下
+  const gripper = new THREE.Group(); sAdd(gripper, 0, GRIP_REST, 0);
+  const gm = new THREE.Mesh(MODEL.near.grip, MODEL.mat); gm.castShadow = true; gripper.add(gm);
+  const fingers = [];
+  // 三條吊帶：一邊兩條、另一邊一條（位置照模型）
+  const beltMat = mat(0xd3d7db, { roughness: 0.6 });
+  const belts = M.belts.map(([bx, bz]) => sAdd(new THREE.Mesh(new THREE.BoxGeometry(0.045, 1, 0.008), beltMat), bx, 0, bz));
 
   // ---------- 防墜機構：前後外殼底部各兩片小金屬板，伸到 FOUP 四個角落下方 ----------
   //   轉軸直立、裝在外殼內側角落；收起時板子轉 90° 藏進外殼底部，
@@ -182,7 +215,7 @@ function createVehicle(seg, d) {
   const guards = [];
   [-1, 1].forEach(k => {                                                  // k=+1 車頭端，k=-1 車尾端
     [-1, 1].forEach((sz, i) => {                                          // sz：左右兩片
-      const pv = new THREE.Group(); pv.position.set(k * (END_X - END_T / 2), -1.585 - i * 0.012, sz * GUARD_Z); g.add(pv);
+      const pv = new THREE.Group(); pv.position.set(k * (END_X - END_T / 2), BODY_BOT + 0.04 - i * 0.012, sz * GUARD_Z); g.add(pv);   // 外殼底部（FOUP 底面再下面一點），揮出時托住 FOUP
       const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.06, 10), VG.gray); pv.add(pin);  // 直立轉軸
       const plate = new THREE.Mesh(VG.guardGeo, VG.guardMat); plate.castShadow = true;
       plate.position.set(-k * GUARD_L / 2, 0, -sz * GUARD_W / 2); pv.add(plate);
@@ -198,7 +231,7 @@ function createVehicle(seg, d) {
     hoist: 0, hv: 0, shift: 0, guard: 0, claw: 0, dist: 0,          // 機構狀態：捲揚深度、捲揚速度、側移量、防墜開度(0關1開)、夾爪(0開1合)
     group: g, bogies, shiftG, stages, drum, gripper, belts, fingers, guards, label,
     topMat: capMat, ledMat, color: '#' + accent.getHexString() };
-  [cap, ...pads, front, rear, housing].forEach(m => pickables.push(m));
+  [cap, ...pads, front, rear, housing, gm].forEach(m => pickables.push(m));
   if (xray) setXrayMat(capMat, true);
   setHiddenParts(v);
   g.traverse(o => o.userData.vehicle = v);
@@ -230,7 +263,7 @@ function placeVehicle(v, detailed = true) {
   });
   v.stages.forEach(st => st.position.z = v.shift * st.userData.f);
   v.drum.rotation.x = v.hoist / DRUM_R;
-  const top = BOX_Y - BOX_H / 2, bot = gy + 0.05, len = Math.max(0.01, top - bot);
+  const top = MODEL.meta.beltTop + UNIT_DY, bot = gy + MODEL.meta.beltGrip, len = Math.max(0.01, top - bot);
   v.belts.forEach(b => { b.scale.y = len; b.position.y = (top + bot) / 2; });
   // 夾爪
   v.fingers.forEach(f => f.position.z = f.userData.k * (0.27 - 0.08 * v.claw));
@@ -242,51 +275,41 @@ function placeVehicle(v, detailed = true) {
 const VEH_MAX = 150;      // 天車數量上限
 const LOD_DIST = 45;      // 離鏡頭多遠以內才畫完整細節
 const VP = (() => {
-  // 遠處用的簡化天車：外形跟近看的一樣（八邊形前後外殼、車頂蓋、頂部防撞板、中間的捲揚盒、夾爪、吊帶），
-  //   只是把很多小零件合成幾塊、所有天車一起畫。捲揚盒跟著側移、夾爪跟著捲揚，所以遠看也看得到取放貨的動作
-  const make = fill => { const b = makeBatch(); fill(b); return b.geometry(); };
+  // 遠處用的簡化天車：同一個模型的簡化版（far），車體、側移＋捲揚單元、夾爪、吊帶、前後燈各一個 InstancedMesh，
+  //   所有天車一起畫；側移單元跟著側移、夾爪跟著捲揚，所以遠看也看得到取放貨的動作
+  const Mm = MODEL.meta, make = fill => { const b = makeBatch(); fill(b); return b.geometry(); };
+  const beltGeo = make(b => Mm.belts.forEach(([x, z]) => b.add(new THREE.BoxGeometry(0.045, 1, 0.008), 0xd3d7db, null, x, -0.5, z)));
+  const ledGeo = make(b => { b.add(VG.visorLedGeo, 0xffffff, null, END_X, 0, 0); b.add(VG.visorLedGeo, 0xffffff, null, -END_X, 0, 0, Math.PI); });
   const W = 0xf3f4f2, GR = 0x8f979e;
-  const bodyGeo = make(b => {
+  const bodyGeo = make(b => {                                         // 外殼：原本的造型
     b.add(VG.endPanel, W, null, END_X, 0, 0); b.add(VG.endPanel, W, null, -END_X, 0, 0, Math.PI);
     b.add(VG.capGeo, W, null, 0, 0, 0);
     b.add(VG.visorGeo, 0xdfe3e6, null, END_X, 0, 0); b.add(VG.visorGeo, 0xdfe3e6, null, -END_X, 0, 0, Math.PI);
-    b.add(new THREE.BoxGeometry(1.12, 0.05, 0.92), GR, null, 0, -0.265, 0);                          // 側移固定節
+    b.add(VG.trimGeo, 0x26282d, null, END_X, 0, 0); b.add(VG.trimGeo, 0x26282d, null, -END_X, 0, 0, Math.PI);
+    b.add(new THREE.BoxGeometry(1.12, 0.05, 0.92), GR, null, 0, -0.265, 0);
     [-1, 1].forEach(k => b.add(new THREE.BoxGeometry(2 * (END_X - END_T / 2) + 0.04, 0.04, 0.05), GR, null, 0, BODY_BOT + 0.02, k * 0.47));
-    b.add(new THREE.BoxGeometry(0.06, 0.12, 0.14), 0xff6a1a, null, END_X + END_T / 2 + 0.02, -1.5, 0.1);  // 前方感測器
+    b.add(new THREE.BoxGeometry(0.06, 0.12, 0.14), 0xff6a1a, null, END_X + END_T / 2 + 0.02, -1.5, 0.1);
   });
-  const unitGeo = make(b => {
-    b.add(new THREE.BoxGeometry(1.1, BOX_H, 0.86), 0xe3e6e6, null, 0, BOX_Y, 0);                      // 捲揚盒
-    b.add(new THREE.BoxGeometry(1.04, 0.04, 0.86), 0xaeb5bc, null, 0, -0.345, 0);                     // 滑台
-    [-1, 1].forEach(k => b.add(new THREE.BoxGeometry(0.36, 0.14, 0.012), 0x15181b, null, -0.25, BOX_Y + 0.04, k * 0.436));
-  });
-  const gripGeo = make(b => {
-    b.add(new THREE.BoxGeometry(0.6, 0.06, 0.6), 0x3a4048, null, 0, 0, 0);
-    b.add(new THREE.BoxGeometry(0.42, 0.03, 0.42), GR, null, 0, 0.045, 0);
-    [-1, 1].forEach(k => b.add(new THREE.BoxGeometry(0.3, 0.12, 0.03), GR, null, 0, -0.08, k * 0.27));
-  });
-  const beltGeo = make(b => BELT_POS.forEach(([a, c]) => b.add(new THREE.BoxGeometry(0.045, 1, 0.008), 0xd3d7db, null, a * BELT_XY, -0.5, c * BELT_XY)));
-  const ledGeo = make(b => { b.add(VG.visorLedGeo, 0xffffff, null, END_X, 0, 0); b.add(VG.visorLedGeo, 0xffffff, null, -END_X, 0, 0, Math.PI); });
-  const vc = vcMat({ roughness: 0.45, metalness: 0.15 });
-  const body = new THREE.InstancedMesh(bodyGeo, vc, VEH_MAX), unit = new THREE.InstancedMesh(unitGeo, vc, VEH_MAX);
-  const grip = new THREE.InstancedMesh(gripGeo, vc, VEH_MAX), belt = new THREE.InstancedMesh(beltGeo, vc, VEH_MAX);
+  const unitGeo = MODEL.far.shift.clone().translate(0, UNIT_DY, 0);
+  const body = new THREE.InstancedMesh(bodyGeo, vcMat({ roughness: 0.45, metalness: 0.15 }), VEH_MAX), unit = new THREE.InstancedMesh(unitGeo, MODEL.mat, VEH_MAX);
+  const grip = new THREE.InstancedMesh(MODEL.far.grip, MODEL.mat, VEH_MAX), belt = new THREE.InstancedMesh(beltGeo, vcMat({ roughness: 0.6 }), VEH_MAX);
   const led = new THREE.InstancedMesh(ledGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), VEH_MAX);
   const all = [body, unit, grip, belt, led];
   all.forEach(m => { m.frustumCulled = false; m.count = 0; scene.add(m); });
   body.castShadow = unit.castShadow = grip.castShadow = true;
-  const zero = new THREE.Matrix4().makeScale(0, 0, 0), m = new THREE.Matrix4(), t = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), c = new THREE.Color();
+  const zero = new THREE.Matrix4().makeScale(0, 0, 0), m = new THREE.Matrix4(), t = new THREE.Matrix4(), t2 = new THREE.Matrix4(), q = new THREE.Quaternion(), q0 = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), sc = new THREE.Vector3(), c = new THREE.Color();
   return {
     body, led, all, c,
     hide(i) { all.forEach(x => x.setMatrixAt(i, zero)); },
-    // 第 i 台：照天車目前的位置、方向、側移量、捲揚深度擺好
     set(i, v) {
       const g = v.group.position;
       m.compose(p.set(g.x, g.y, g.z), q.setFromEuler(e.set(0, v.group.rotation.y, 0)), one);
       body.setMatrixAt(i, m); led.setMatrixAt(i, m);
-      unit.setMatrixAt(i, t.copy(m).multiply(new THREE.Matrix4().makeTranslation(0, 0, v.shift)));
+      unit.setMatrixAt(i, t.copy(m).multiply(t2.makeTranslation(0, 0, v.shift)));
       const gy = GRIP_REST - v.hoist;
-      grip.setMatrixAt(i, t.copy(m).multiply(new THREE.Matrix4().makeTranslation(0, gy, v.shift)));
-      const top = BOX_Y - BOX_H / 2, len = Math.max(0.01, top - (gy + 0.05));
-      belt.setMatrixAt(i, t.copy(m).multiply(new THREE.Matrix4().compose(p.set(0, top, v.shift), q.identity(), new THREE.Vector3(1, len, 1))));
+      grip.setMatrixAt(i, t.copy(m).multiply(t2.makeTranslation(0, gy, v.shift)));
+      const top = Mm.beltTop + UNIT_DY, len = Math.max(0.01, top - (gy + Mm.beltGrip));
+      belt.setMatrixAt(i, t.copy(m).multiply(t2.compose(p.set(0, top, v.shift), q0, sc.set(1, len, 1))));
     },
     finish(n) { all.forEach(x => { x.count = n; x.instanceMatrix.needsUpdate = true; }); if (led.instanceColor) led.instanceColor.needsUpdate = true; },
   };

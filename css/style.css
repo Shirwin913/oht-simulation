@@ -62,6 +62,10 @@ button.ok:hover { background:#166534; }
   #panel { top:auto; bottom:8px; left:8px; right:8px; width:auto; max-height:44vh; }
   #hint { display:none; }
 }
+/* 自動復歸 */
+.arec { margin:6px 0; padding:6px 8px; border-radius:6px; font-weight:600; }
+.arec.run { background:rgba(56,189,248,.15); color:#7dd3fc; border:1px solid rgba(56,189,248,.5); }
+.arec.fail { background:rgba(239,68,68,.15); color:#fca5a5; border:1px solid rgba(239,68,68,.5); }
 /* 優先級 */
 .priBox .alarmBtns button { border-color:rgba(249,115,22,.5); }
 .priBox .alarmBtns button:hover { background:#3a2614; }
@@ -87,7 +91,11 @@ button.ok:hover { background:#166534; }
 #hmi .mut { color:#475569; }
 #hmi .hhead { display:flex; align-items:center; gap:12px; padding:8px 10px; background:linear-gradient(#dfe5eb,#cfd7df); border-bottom:1px solid #94a3b8; cursor:move; }
 #hmi .lamps { display:flex; gap:8px; }
-#hmi .lamp { width:62px; height:62px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#86efac,#16a34a); border:3px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,.3); font-weight:700; padding:0; }
+#hmi .lampsBox { display:flex; flex-direction:column; gap:5px; }
+#hmi .lamp { width:58px; height:58px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#86efac,#16a34a); border:3px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,.3);
+  font-weight:700; display:flex; align-items:center; justify-content:center; cursor:default; user-select:none; }
+#hmi .lamp.blinkL { animation:hblink .6s infinite; }
+#hmi .lamp.dim { background:radial-gradient(circle at 35% 30%,#e5e7eb,#9ca3af); color:#374151; }
 #hmi .lamp.man { background:radial-gradient(circle at 35% 30%,#fde68a,#d97706); }
 #hmi .lamp.off { background:radial-gradient(circle at 35% 30%,#fca5a5,#dc2626); color:#fff; }
 #hmi .big { flex:1; text-align:center; font-size:30px; font-weight:800; background:#fff; border:1px solid #cbd5e1; padding:10px 0; letter-spacing:4px; }
@@ -144,3 +152,98 @@ button.ok:hover { background:#166534; }
 .hmiBtn { border-color:#38bdf8 !important; }
 @media (max-width:900px) { #hmi .hmain, #hmi .hquick { grid-template-columns:1fr; } }
 @keyframes hblink { 50% { opacity:.45; } }
+
+/* ===== 自動導覽（tour.js）===== */
+#tourBtn { position:fixed; left:14px; top:14px; z-index:55; padding:9px 16px; font-size:15px; font-weight:700; border-radius:22px;
+  background:linear-gradient(#22d3ee,#0891b2); color:#fff; border:2px solid #fff; box-shadow:0 4px 14px rgba(0,0,0,.4); cursor:pointer; }
+#tourMenu { display:none; position:fixed; left:14px; top:96px; z-index:56; width:280px; background:#0f172a; border:1px solid #22d3ee; border-radius:10px; padding:10px; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+#tourMenu .tm-h { font-weight:700; color:#67e8f9; margin-bottom:8px; }
+#tourMenu button { display:block; width:100%; text-align:left; margin:4px 0; padding:8px 10px; }
+#tourMenu label { display:flex; gap:6px; align-items:center; margin-top:8px; font-size:12px; color:#cbd5e1; }
+#tourHl { display:none; position:fixed; z-index:58; pointer-events:none; border:3px solid #facc15; border-radius:8px;
+  box-shadow:0 0 0 4px rgba(250,204,21,.35), 0 0 24px rgba(250,204,21,.7); transition:all .25s; animation:tourPulse 1.2s infinite; }
+@keyframes tourPulse { 50% { box-shadow:0 0 0 8px rgba(250,204,21,.15), 0 0 30px rgba(250,204,21,.9); } }
+#tourBub { display:none; position:fixed; z-index:59; width:340px; background:#fffbeb; color:#1c1917; border:2px solid #f59e0b; border-radius:12px; padding:12px 14px; box-shadow:0 12px 34px rgba(0,0,0,.45); font-size:13px; line-height:1.6; }
+#tourBub .tb-h { display:flex; justify-content:space-between; color:#92400e; font-size:12px; font-weight:700; }
+#tourBub .tb-t { font-size:16px; font-weight:800; margin:4px 0; }
+#tourBub .tb-w { color:#b45309; font-weight:600; min-height:4px; margin:4px 0; }
+#tourBub .tb-b { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+#tourBub button { background:#fff; color:#1c1917; border:1px solid #d6d3d1; border-radius:6px; padding:5px 10px; cursor:pointer; }
+#tourBub button.pri { background:#f59e0b; color:#fff; border-color:#d97706; font-weight:700; }
+#tourBub button:disabled { opacity:.4; cursor:not-allowed; }
+#tourBub label { display:flex; gap:4px; align-items:center; font-size:12px; margin-left:auto; }
+#tourCur { display:none; position:fixed; z-index:61; pointer-events:none; left:50%; top:50%; transition:left .8s ease-in-out, top .8s ease-in-out; filter:drop-shadow(0 2px 3px rgba(0,0,0,.5)); }
+#tourCur.click::after { content:''; position:absolute; left:-14px; top:-14px; width:28px; height:28px; border-radius:50%; border:3px solid #f59e0b; animation:tourClick .35s ease-out; }
+@keyframes tourClick { from { transform:scale(.3); opacity:1; } to { transform:scale(1.6); opacity:0; } }
+
+/* 目前的通訊方式（畫面左上角） */
+#commBadge { position:fixed; left:14px; top:62px; z-index:30; padding:5px 12px; border-radius:14px; font-size:12px; font-weight:700;
+  background:rgba(8,47,73,.85); color:#a5f3fc; border:1px solid rgba(103,232,249,.6); pointer-events:none; }
+#commBadge.mesh { background:rgba(120,53,15,.88); color:#fde68a; border-color:rgba(251,191,36,.7); }
+
+/* ===== 右側面板：分頁整理 ===== */
+#panel .phead { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+#panel .phead h1 { flex:1; margin:0; font-size:16px; }
+#panel .phead button { padding:4px 8px; font-size:12px; }
+.stats.top4 { grid-template-columns:1fr 1fr; margin-bottom:8px; }
+.ptabs { display:grid; grid-template-columns:repeat(5,auto); gap:3px; margin:0 -2px 8px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+.ptabs button { padding:5px 2px; font-size:12px; background:transparent; border:1px solid transparent; border-radius:6px; color:#c3ccd5; position:relative; }
+.ptabs button:hover { background:rgba(255,255,255,.06); }
+.ptabs button.cur { background:rgba(34,211,238,.15); border-color:rgba(34,211,238,.5); color:#e0f7fa; font-weight:700; }
+.ptabs b { position:absolute; top:-6px; right:-4px; min-width:16px; height:16px; line-height:16px; border-radius:8px; background:#ef4444; color:#fff; font-size:10px; display:none; }
+.ptabs b.on { display:block; animation:hblink 1s infinite; }
+.ptab { display:none; } .ptab.cur { display:block; }
+.ptab .sec:first-child { margin-top:2px; }
+.card { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:10px; background:rgba(255,255,255,.03); }
+.card .ch { font-weight:700; font-size:13px; margin-bottom:6px; }
+.card #priInfo, .card #commInfo, .card #maintInfo { margin-bottom:6px; font-size:12px; line-height:1.6; }
+.alarmBtns.one { grid-template-columns:1fr; } .alarmBtns.three { grid-template-columns:1fr 1fr 1fr; }
+.helpBtns { grid-template-columns:1fr 1fr; }
+.helpBtns button { text-align:left; padding-left:10px; }
+.helpBtns button::before { content:'ⓘ '; color:var(--acc); }
+
+/* ===== 操作介面整理（hmi.js）===== */
+#hmi .hhead { display:grid; grid-template-columns:auto 1fr auto auto; gap:12px; align-items:center; }
+#hmi .hid { display:flex; align-items:center; gap:6px; min-width:0; font-weight:600; }
+#hmi .hid .no { font-size:22px; padding:2px 10px; }
+#hmi .big { font-size:26px; padding:6px 0; }
+#hmi .lamps { gap:6px; }
+#hmi .lamp { width:48px; height:48px; font-size:12px; }
+#hmi .htool { display:flex; align-items:center; gap:5px; flex-wrap:wrap; padding:6px 10px; background:#dfe5eb; border-bottom:1px solid #b6c0ca; }
+#hmi .htool .tg { font-size:11px; color:#475569; margin-left:2px; }
+#hmi .htool .sep { width:1px; height:22px; background:#94a3b8; margin:0 6px; }
+#hmi .htool .hinfo { margin-left:auto; font-size:11px; color:#475569; }
+#hmi .htabs { display:flex; gap:4px; padding:6px 10px 0; background:#e9edf1; grid-template-columns:none; }
+#hmi .htabs button { flex:none; padding:7px 16px; border-radius:6px 6px 0 0; border-bottom:none; font-size:13px; }
+#hmi .hquick { grid-template-columns:1.75fr 1fr; gap:10px; }
+#hmi .axt { width:100%; border-collapse:separate; border-spacing:0 4px; background:transparent; }
+#hmi .axt th, #hmi .axt td { padding:3px 5px; text-align:center; background:#fff; white-space:nowrap; }
+#hmi .axt tr:first-child th { background:transparent; color:#475569; font-size:11px; font-weight:600; }
+#hmi .axt tr:not(:first-child) th { font-size:14px; border-radius:6px 0 0 6px; }
+#hmi .axt tr:not(:first-child) td:last-child { border-radius:0 6px 6px 0; }
+#hmi .axt td.num { background:#cffafe; font-variant-numeric:tabular-nums; min-width:62px; }
+#hmi .axt .code { display:inline-block; min-width:44px; padding:1px 4px; background:#fde047; border-radius:3px; }
+#hmi .axt .code.bad { background:#ef4444; color:#fff; animation:hblink 1s infinite; }
+#hmi .axt td.ops { text-align:left; } #hmi .axt td.ops button { margin-right:3px; }
+#hmi .axt .sv { min-width:40px; }
+#hmi .axt .done { margin:0; padding:2px 8px; font-size:11px; }
+#hmi .axt .stopRow { background:transparent; text-align:right; padding-top:2px; }
+#hmi .iod { margin-top:6px; background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:4px 8px; }
+#hmi .iod summary { cursor:pointer; font-weight:600; color:#1e3a8a; }
+#hmi .iod .io { display:grid; grid-template-columns:1fr 1fr; gap:3px 8px; margin-top:6px; }
+#hmi .estop.small { height:auto; padding:8px; }
+#hmi .estop.small span { width:84px; height:84px; font-size:14px; }
+#hmi .hmsg { order:5; }
+
+/* 比較實驗 */
+.bcombos { display:grid; grid-template-columns:1fr 1fr; gap:3px 8px; font-size:12px; margin:4px 0 8px; }
+.bcombos label { display:flex; align-items:center; gap:4px; }
+.bbar { height:6px; background:rgba(255,255,255,.1); border-radius:3px; overflow:hidden; margin:6px 0 4px; }
+.bbar i { display:block; height:100%; background:var(--acc); transition:width .3s; }
+#alarmCard.wide { width:min(760px, 92vw); max-height:80vh; overflow:auto; }
+.btab { width:100%; border-collapse:collapse; font-size:12.5px; margin:8px 0; }
+.btab th, .btab td { padding:5px 8px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+.btab th:first-child, .btab td:first-child { text-align:left; color:#c3ccd5; }
+.btab th { color:#e0f2fe; font-size:12px; }
+.btab td.best { background:rgba(34,197,94,.22); color:#bbf7d0; font-weight:700; }
+.btab td.worst { background:rgba(239,68,68,.18); color:#fecaca; }

@@ -68,7 +68,19 @@ const ALARM_INFO = {
       steps: ['確認 AP 的電源和指示燈', '通知 IT 更換 AP 或檢查供電（PoE）', '更換後確認訊號範圍和漫遊正常'] },
   ],
 };
-const ALARM_TYPE_NAME = { vehicle: '天車故障停車', transfer: '取放貨異常', machine: '機台／Load Port 當機', track: '軌道區段封鎖', ap: '無線 AP 斷線' };
+ALARM_INFO.host = [{ code: 'S-601', title: '派車控制系統（OCS）當機',
+  what: '負責把搬運任務指定給天車的派車控制系統當機了（伺服器、程式或網路異常）。MCS 還會產生搬運任務，但沒有人把任務派給天車。',
+  impact: '「中央派車」模式：完全停止派車，空車停著等、待搬運的 FOUP 越積越多，恢復後要一段時間才消化得完。「天車自主接任務」模式：天車互相協調、自己接任務，影響很小。已經在搬的貨都會照常送完。',
+  steps: ['通知系統人員確認 OCS 伺服器和程式狀態', '必要時切換備援主機', '恢復後觀察待派車任務是否慢慢消化'] }];
+const ALARM_TYPE_NAME = { vehicle: '天車故障停車', transfer: '取放貨異常', machine: '機台／Load Port 當機', track: '軌道區段封鎖', ap: '無線 AP 斷線', host: '派車系統當機' };
+// 派車控制系統當機（中央派車停止；自主接任務不受影響）
+let hostDown = null;
+const OCS_TARGET = { name: 'OCS', x: 0, z: 0 };
+function raiseHostDown(_, opts) {
+  if (hostDown) return null;
+  const a = raiseAlarm('host', ALARM_INFO.host[0], OCS_TARGET, '派車控制系統（中控室）', opts);
+  hostDown = a; return a;
+}
 
 // ---------- 標記 ----------
 function alarmMarker(text) {
@@ -87,10 +99,14 @@ function barrierGroup(seg) {
 }
 
 // ---------- 發生異常 ----------
-const pickInfo = type => pick(ALARM_INFO[type]);
+const pickInfo = type => pickA(ALARM_INFO[type]);
 function raiseAlarm(type, info, target, label, opts = {}) {
   const a = { id: ++alarmSeq, type, info, target, label, start: simTime, rerouted: 0, canceled: 0, auto: !!opts.auto,
-    autoClearAt: opts.auto ? simTime + 150 + Math.random() * 150 : null };
+    autoClearAt: opts.auto ? simTime + 150 + rndA() * 150 : null };
+  // 天車的異常先「自動復歸」：天車自己重試幾秒，成功就繼續跑；失敗才需要人到現場用操作介面復歸
+  if ((type === 'vehicle' || type === 'transfer') && AUTO_REC_P[info.code] !== undefined) {
+    a.autoRec = { t: AUTO_REC_TIME, ok: opts.autoFail ? false : opts.autoOk ? true : rndA() < AUTO_REC_P[info.code] };
+  }
   a.marker = alarmMarker(`⚠ ${info.code}`);
   alarms.push(a);
   log(`⚠ ${info.code} ${info.title}：${label}`);
@@ -99,7 +115,7 @@ function raiseAlarm(type, info, target, label, opts = {}) {
 }
 const MOVING = ['idle', 'toPick', 'toDrop'];
 function raiseVehicleFault(v, opts) {
-  v = v || pick(vehicles.filter(x => !x.fault && MOVING.includes(x.state) && x.v > 0.3));
+  v = v || pickA(vehicles.filter(x => !x.fault && MOVING.includes(x.state) && x.v > 0.3));
   if (!v) return null;
   const a = raiseAlarm('vehicle', pickInfo('vehicle'), v, `天車 ${v.id}（${v.seg.name}）`, opts);
   v.fault = a; return a;
@@ -107,7 +123,7 @@ function raiseVehicleFault(v, opts) {
 // 取放貨異常：找一台正在夾取／放貨的車；沒有的話，下一台開始夾取／放貨的車就會發生
 function raiseTransferFault(v, opts) {
   if (!v) {
-    v = pick(vehicles.filter(x => !x.fault && (x.state === 'grip' || x.state === 'release' || x.state === 'lower')));
+    v = pickA(vehicles.filter(x => !x.fault && (x.state === 'grip' || x.state === 'release' || x.state === 'lower')));
     if (!v) { pendingTransferFault = opts || true; log('下一台開始夾取／放貨的天車會發生取放貨異常'); return null; }
   }
   if (pendingTransferFault && pendingTransferFault !== true) opts = pendingTransferFault;
@@ -117,7 +133,7 @@ function raiseTransferFault(v, opts) {
   v.fault = a; return a;
 }
 function raiseMachineDown(m, opts) {
-  m = m || pick(machines.filter(x => !x.down && !x.seg.blocked));
+  m = m || pickA(machines.filter(x => !x.down && !x.seg.blocked));
   if (!m) return null;
   const a = raiseAlarm('machine', pickInfo('machine'), m, `機台 ${m.name}`, opts);
   m.down = a;
@@ -128,7 +144,7 @@ function raiseTrackBlock(seg, opts) {
   // 可以封鎖的區段：Bay（裡面的機台、儲格暫時不能用）、區塊連接線（跨區要繞路）
   if (!seg) {
     const cand = [...bays.map(b => b.seg), ...links.map(l => l.seg)].filter(s => !s.blocked && !s.maint && !vehicles.some(v => v.fault && v.seg === s));
-    seg = Math.random() < 0.5 ? pick(cand.filter(s => s.kind === 'link')) : pick(cand.filter(s => s.kind === 'bay'));
+    seg = rndA() < 0.5 ? pickA(cand.filter(s => s.kind === 'link')) : pickA(cand.filter(s => s.kind === 'bay'));
   }
   if (!seg) return null;
   const info = seg.kind === 'bay' ? ALARM_INFO.track[0] : ALARM_INFO.track[1];
@@ -201,6 +217,7 @@ function clearAlarm(a) {
   }
   if (a.type === 'machine') a.target.down = null;
   if (a.type === 'ap') a.target.down = null;
+  if (a.type === 'host') hostDown = null;
   if (a.type === 'track') { a.target.blocked = null; scene.remove(a.barrier); computeRoutes(); replanAll(null); }
   log(`✔ 復歸 ${a.info.code} ${a.label}（處理 ${fmtDur(simTime - a.start)}）`);
   if (openAlarm === a) closeAlarmCard();
@@ -212,20 +229,27 @@ function alarmPos(a) {
   if (a.type === 'vehicle' || a.type === 'transfer') { const p = a.target.group.position; return [p.x, H + 2.2, p.z]; }
   if (a.type === 'machine') return [a.target.x, 5.2, a.target.z];
   if (a.type === 'ap') return [a.target.x, 11.3, a.target.z];
+  if (a.type === 'host') return [0, 14, 0];
   const [x, z] = a.target.at(a.target.len / 2); return [x, H + 2.2, z];
 }
 function alarmTick(simDt) {
   for (const a of alarms) { const [x, y, z] = alarmPos(a); a.marker.position.set(x, y, z); }
   if (paused) return;
+  for (const a of alarms.slice()) if (a.autoRec) {                    // 自動復歸倒數
+    a.autoRec.t -= simDt;
+    if (a.autoRec.t > 0) continue;
+    if (a.autoRec.ok) { log(`🔄 ${a.target.id} 自動復歸成功（${a.info.code}），繼續運行`); a.autoRecovered = true; a.autoRec = null; clearAlarm(a); }
+    else { a.autoRec = null; a.autoRecFailed = true; log(`✋ ${a.target.id} 自動復歸失敗（${a.info.code}），需要人員到現場復歸`); }
+  }
   for (const a of alarms.slice()) if (a.autoClearAt && simTime >= a.autoClearAt) {
-    if (a.type === 'vehicle' && Math.random() < 0.4) sendToMaint(a);     // 約四成的天車故障要送維修區
+    if (a.type === 'vehicle' && rndA() < 0.4) sendToMaint(a);     // 約四成的天車故障要送維修區
     else clearAlarm(a);
   }
   if (autoAlarm) {
     autoAlarmT -= simDt;
     if (autoAlarmT <= 0) {
-      autoAlarmT = 120 + Math.random() * 120;
-      const t = pick(['vehicle', 'transfer', 'machine', 'track', 'ap']);
+      autoAlarmT = 120 + rndA() * 120;
+      const t = pickA(['vehicle', 'transfer', 'machine', 'track', 'ap']);
       ({ vehicle: raiseVehicleFault, transfer: raiseTransferFault, machine: raiseMachineDown, track: raiseTrackBlock, ap: raiseApDown })[t](null, { auto: true });
     }
   }
@@ -241,6 +265,11 @@ function alarmImpact(a) {
     return [`後面排隊停住的天車：${queued} 台`, v.job ? `延遲中的搬運任務：${v.job.foup.id}（${v.job.from.name} → ${v.job.to.name}）` : '這台天車沒有搬運任務'];
   }
   if (a.type === 'ap') return apImpact(a);
+  if (a.type === 'host') {
+    const waiting = jobs.filter(j => !j.vehicle).length;
+    return DISPATCH_MODE === 'auto' ? ['現在是「天車自主接任務」：天車互相協調繼續接任務，派車不受影響', `等待派車的任務：${waiting} 筆`]
+      : ['現在是「中央派車」：派車完全停止，空車停著等', `等待派車的任務：${waiting} 筆（越積越多）`, '可以到「系統功能」把派車方式切成「天車自主接任務」比較看看'];
+  }
   if (a.type === 'machine') {
     const stuck = a.target.ports.filter(p => p.foup).length;
     return [`卡在機台上的 FOUP：${stuck} 個`, `改派到 STB 的任務：${a.rerouted} 筆`, `取消的取貨任務：${a.canceled} 筆`];
@@ -275,6 +304,7 @@ function renderAlarmCard() {
   const a = openAlarm, c = document.getElementById('alarmCard');
   c.innerHTML = `<div class="hd"><span>⚠ ${a.info.code}　${a.info.title}</span><button id="acClose">✕</button></div>
     <div class="mut">${ALARM_TYPE_NAME[a.type]} · ${a.label} · 已經 ${fmtDur(simTime - a.start)}</div>
+    ${a.autoRec ? `<div class="arec run">🔄 自動復歸中…（天車自己重試，約 ${Math.ceil(a.autoRec.t)} 秒）</div>` : a.autoRecFailed ? '<div class="arec fail">✋ 自動復歸失敗：需要人員到現場，用天車操作介面「警報清除」後手動復歸</div>' : ''}
     <h4>發生了什麼</h4><p>${a.info.what}</p>
     <h4>會造成什麼影響</h4><p>${a.info.impact}</p>
     <ul class="impact">${alarmImpact(a).map(t => `<li>${t}</li>`).join('')}</ul>

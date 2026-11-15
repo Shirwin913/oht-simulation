@@ -22,7 +22,8 @@ const STB_TOP = 4.3;     // STB（軌道旁暫存架）表面高度
 const STB_OFFSET = 1.1;  // STB 離軌道中心的側向距離
 const STB_DWELL = 2400;   // FOUP 放在 STB 暫存的最長時間（秒，實際隨機 30%~100%）
 const FOUP_OFF = 0.74;   // FOUP 原點到夾爪距離
-const GRIP_REST = -0.77; // 夾爪收起位置（車體座標）
+const UNIT_DY = 0.07;     // 模型的側移＋捲揚單元往上移一點，接到原本外殼的滑軌下面
+const GRIP_REST = OHT_MODEL.meta.gripRest + UNIT_DY; // 夾爪收起位置（車體座標，照模型夾爪底面，約 -0.86）
 // 捲揚要放多深才能把 FOUP 放到某個 Port 上
 const hoistDepth = port => GRIP_REST - (port.top + FOUP_OFF - H);
 
@@ -33,6 +34,10 @@ let simTime = 0, completed = 0, waitSum = 0, waitN = 0, cycleSum = 0;
 let jobSeq = 0, vehSeq = 0, foupSeq = 0;
 const jobs = [], vehicles = [], ports = [], machines = [], logs = [];
 let followed = null;
+
+// 自動復歸：天車異常後先自己重試 AUTO_REC_TIME 秒，成功機率依異常碼（急停不會自動復歸）
+const AUTO_REC_TIME = 6;
+const AUTO_REC_P = { 'E-101': 0.5, 'E-102': 0.7, 'E-103': 0.6, 'E-201': 0.5, 'E-202': 0.6, 'E-203': 0.3 };
 
 // 車輛維修區的捲揚機（Lifter）
 const LIFT_HALF = 1.45;     // 跟著天車一起降下去的那段軌道長度的一半

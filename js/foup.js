@@ -102,12 +102,12 @@ function setFoupTag(f) {
 function spawnFoup(port, state) {
   const idx = FB.free.length ? FB.free.pop() : FB.used++;
   const f = { id: 'LOT' + String(++foupSeq).padStart(4, '0'), idx, state, timer: 0, job: null, port, carrier: null, rot: 0, localRot: 0 };
-  const r = Math.random(); f.pri = r < 0.03 ? 2 : r < 0.15 ? 1 : 0;              // 約 12% 急件、3% 特急
+  const r = rndD(); f.pri = r < 0.03 ? 2 : r < 0.15 ? 1 : 0;              // 約 12% 急件、3% 特急
   setFoupTag(f);
   placeFoupAt(f, port);
-  if (state === 'processing') f.timer = procTime * (0.2 + Math.random());
+  if (state === 'processing') f.timer = procTime * (0.2 + rndD());
   port.foup = f; return f;
 }
-machines.forEach(m => m.ports.forEach(p => { if (Math.random() < 0.55) spawnFoup(p, 'processing'); }));
+machines.forEach(m => m.ports.forEach(p => { if (rndD() < 0.55) spawnFoup(p, 'processing'); }));
 // STB 儲格一開始約 4 成放著暫存中的 FOUP（在製品 WIP）
-ports.forEach(p => { if (p.owner.type === 'stb' && Math.random() < 0.4) { const f = spawnFoup(p, 'buffered'); f.timer = Math.random() * STB_DWELL; } });
+ports.forEach(p => { if (p.owner.type === 'stb' && rndD() < 0.4) { const f = spawnFoup(p, 'buffered'); f.timer = rndD() * STB_DWELL; } });

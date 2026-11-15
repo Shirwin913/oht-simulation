@@ -23,9 +23,15 @@ function updateUI() {
       `<td>${stateText(v)}</td><td class="route" title="${route}">${pr}${route}</td><td style="text-align:right">${v.v.toFixed(1)}</td></tr>`;
   }).join('');
   renderAlarms();
+  $('alarmCount').textContent = alarms.length; $('alarmBadge').textContent = alarms.length || ''; $('alarmBadge').className = alarms.length ? 'on' : '';
   renderHmi();
   const nc = vehicles.filter(v => v.noComm), ho = vehicles.filter(v => v.handover > 0).length;
-  $('commInfo').innerHTML = `AP：${aps.length - aps.filter(a => a.down).length}／${aps.length} 台正常 · 漫遊（換 AP）${roamCount} 次` +
+  $('commBadge').textContent = COMM_MODE === 'mesh' ? '📡 通訊：天車 Mesh 網狀網路' : '📶 通訊：固定 AP＋漫遊';
+  $('commBadge').className = COMM_MODE === 'mesh' ? 'mesh' : '';
+  $('commInfo').innerHTML = (COMM_MODE === 'mesh'
+    ? `閘道器：${gws.length - gws.filter(g => g.down).length}／${gws.length} 台正常 · 連上 ${meshStat.ok}／${vehicles.length} 台 · 平均 ${meshStat.avgHop.toFixed(1)} 跳、最多 ${meshStat.maxHop} 跳`
+    : `AP：${aps.length - aps.filter(a => a.down).length}／${aps.length} 台正常 · 漫遊（換 AP）${roamCount} 次`) +
+    (DISPATCH_MODE === 'auto' ? `<br>自主接任務 ${autoStat.claims} 筆 · 平均 ${(autoStat.bids / Math.max(1, autoStat.claims)).toFixed(1)} 台出價 · 有競爭 ${autoStat.contested} 筆` : '') +
     `<br>通訊中斷：<b style="color:${nc.length ? '#f87171' : 'inherit'}">${nc.length} 台</b>${nc.length ? `（${nc.map(v => v.id).join('、')}）` : ''}${ho ? ` · 切換 AP 中 ${ho} 台` : ''}` +
     `<br>E84 交握完成 ${e84Count} 次`;
   const avg = ([s, n]) => n ? (s / n).toFixed(0) + 's' : '–';
@@ -64,14 +70,25 @@ $('btnVehPm').onclick = () => { if (followed) vehPm(followed); updateUI(); };
 // 異常事件
 document.querySelectorAll('[data-alarm]').forEach(b => b.onclick = () => {
   const t = b.dataset.alarm;
-  const a = ({ vehicle: raiseVehicleFault, transfer: raiseTransferFault, machine: raiseMachineDown, track: raiseTrackBlock, ap: raiseApDown })[t]();
+  const a = ({ vehicle: raiseVehicleFault, transfer: raiseTransferFault, machine: raiseMachineDown, track: raiseTrackBlock, ap: raiseApDown, host: raiseHostDown })[t]();
   if (a) { openAlarmCard(a); focusAlarm(a); } else if (t !== 'transfer') log('現在找不到可以發生這個異常的對象');
   updateUI();
 });
 function setShowComm(on) { showComm = on; $('showComm').checked = on; }
 $('showComm').onchange = e => setShowComm(e.target.checked);
-$('btnCommInfo').onclick = () => { openInfoCard('comm'); setShowComm(true); };
+$('btnCommInfo').onclick = () => {                                      // 看說明時先打開連線顯示；關掉說明就恢復原本的設定
+  const prev = showComm; setShowComm(true);
+  openInfoCard('comm', () => setShowComm(prev));
+  const c = $('alarmCard'), b = document.createElement('div'); b.className = 'btns';
+  b.innerHTML = '<button id="icComm"></button>'; c.appendChild(b);
+  const sync = () => { $('icComm').textContent = showComm ? '隱藏 AP 範圍和連線' : '顯示 AP 範圍和連線'; };
+  $('icComm').onclick = () => { setShowComm(!showComm); sync(); }; sync();
+};
 $('btnE84Info').onclick = () => openInfoCard('e84');
+$('commMode').onchange = e => { setCommMode(e.target.value); setShowComm(true); updateUI(); };   // 切換時自動打開顯示，才看得出差別
+$('dispMode').onchange = e => { DISPATCH_MODE = e.target.value; log(DISPATCH_MODE === 'auto' ? '🤝 派車方式切換：天車自主接任務（競標）' : '🖥 派車方式切換：中央派車（MCS 指定最近的車）'); updateUI(); };
+$('btnMeshInfo').onclick = () => { const prev = showComm; setShowComm(true); openInfoCard('mesh', () => setShowComm(prev)); };
+$('btnAutoInfo').onclick = () => openInfoCard('auto');
 $('btnHot').onclick = () => { insertHotLot(); updateUI(); };
 $('btnPriInfo').onclick = () => openInfoCard('pri');
 $('btnParkInfo').onclick = () => openInfoCard('park');
@@ -89,6 +106,13 @@ $('alarmList').addEventListener('click', e => {
   updateUI();
 });
 $('alarmBanner').onclick = () => { if (alarms.length) { openAlarmCard(alarms[0]); focusAlarm(alarms[0]); } };
+// 右側面板分頁
+function showPanelTab(k) {
+  document.querySelectorAll('.ptabs [data-pt]').forEach(b => b.classList.toggle('cur', b.dataset.pt === k));
+  document.querySelectorAll('.ptab').forEach(t => t.classList.toggle('cur', t.dataset.ptab === k));
+}
+document.querySelectorAll('.ptabs [data-pt]').forEach(b => b.onclick = () => showPanelTab(b.dataset.pt));
+showPanelTab('ov');
 $('btnPause').onclick = () => { paused = !paused; $('btnPause').textContent = paused ? '▶ 繼續' : '⏸ 暫停'; };
 $('btnView').onclick = () => { setFollow(null); resetView(); };
 $('speed').oninput = e => { speed = +e.target.value; $('speedVal').textContent = speed + 'x'; };
@@ -167,19 +191,36 @@ const INFO_CARDS = {
     <li>STB 儲格是被動的架子，不用交握，直接放</li>
     <li>機台當機時機台不會回應，天車等 ${E84_TIMEOUT} 秒逾時就放棄：放貨改送 STB、取貨取消</li></ul>
     <p class="mut">實際的訊號時序、逾時時間（TA1～TA3 等）依 E84 規範和各廠設定為準。</p>`],
+  mesh: ['📡 天車 Mesh 網狀網路', `
+    <h4>跟固定 AP 有什麼不同</h4><p>固定 AP：每台天車直接連天花板上最近的 AP。<br>
+    Mesh：每台天車本身也是一個無線節點，會<b>幫別台車轉送</b>訊息；訊息一跳一跳傳到「閘道器」（接有線網路的節點），再回到控制系統。
+    這個模擬每個區塊掛 2 台閘道器（黃色，全廠 ${gws.length} 台），天車之間約 ${MESH_R} 公尺內能互傳，閘道器範圍約 ${GW_R} 公尺。</p>
+    <h4>在畫面上看</h4><p>上面「通訊方式」選「天車 Mesh 網狀網路」，勾「顯示無線網路」：每台車拉一條線到它的「下一跳」（另一台車或閘道器），顏色代表第幾跳：綠＝1～2 跳、黃＝3 跳、橘＝4 跳、紅＝5 跳以上。</p>
+    <h4>優點和缺點</h4><ul class="impact"><li>需要的固定設備少，閘道器或某台車斷了會自動改走別條路（自我修復）</li>
+    <li>要靠天車夠密：車少、區域偏僻時可能連不上；跳數越多延遲越大</li><li>軌道上休息的空車也能幫忙轉送</li>
+    <li>可以試試：觸發「無線 AP 斷線」（Mesh 模式下是閘道器斷線），或減少天車數量，看看斷線的車變多</li></ul>
+    <p class="mut">範圍、閘道器數量都是示意，實際以各廠設備為準。</p>`],
+  auto: ['🤝 天車自主接任務（競標）', `
+    <h4>中央派車</h4><p>MCS／OCS 看全廠，把每筆任務直接指定給沿軌道最近的空車。</p>
+    <h4>自主接任務</h4><p>MCS 只把任務<b>公告</b>出去。閒置的天車自己看附近（沿軌道 ${AUTO_RANGE} 公尺內）的任務，自己算路線出價；最近的車得標（急件、特急出價加分）。
+    太遠的任務一開始沒人接，<b>等越久公告範圍越大</b>（每秒多 ${AUTO_GROW} 公尺），最後一定有車接。紀錄會寫「V12 自主接任務（3 台出價）」。</p>
+    <h4>優點和缺點</h4><ul class="impact"><li>每台車自己決定、自己規劃路線，控制系統的負擔小；中央系統短暫有問題時比較不會全部停擺</li>
+    <li>偏遠位置的任務要等公告範圍擴大才有人接，等車時間可能比較久</li>
+    <li>可以切換兩種派車方式，比較面板上的「平均等車時間」和「每小時搬運量」</li></ul>
+    <p class="mut">「自主接任務」需要天車連得上控制系統才看得到公告（固定 AP 或 Mesh 都可以）。範圍、加分都是示意。</p>`],
   park: ['🅿 空車在軌道上休息、推車', `
-    <h4>休息</h4><p>沒有接到指令的空車，不會一直繞圈，而是在軌道上找個不擋路的地方停下來休息（LED 綠燈調暗，狀態顯示「軌道上休息」）。
+    <h4>休息</h4><p>沒有接到指令的空車，不會一直繞圈，而是在軌道上找個不擋路的地方停下來休息（狀態燈變白色＝待機，狀態顯示「軌道上休息」）。
     可以停的地方：主幹線和區塊之間的連接線上，離分岔點夠遠、離下一個匯流點也夠遠，Bay 裡面不停。</p>
     <h4>推車</h4><p>後面有車要開過休息車的位置時，休息的車會被「推」著往前開，讓出路來（狀態顯示「被後車推著前進」），讓完再找下一個地方停。
     好幾台空車停在一起時，前面那台會被後面一台一台推走。</p>
     <h4>有任務的時候</h4><p>派車一樣找沿軌道最近的空車，休息中的車直接從原地出發。</p>
     <ul class="impact"><li>空車休息：省電、減少磨耗，主幹線上也比較不擠</li><li>代價：停的車擋到後面時，後車要先慢下來等它開走</li></ul>`],
 };
-function openInfoCard(kind) {
+function openInfoCard(kind, onClose) {
   if (typeof openAlarm !== 'undefined' && openAlarm) closeAlarmCard();
   maintCardOpen = false;
   const [title, body] = INFO_CARDS[kind], c = $('alarmCard');
   c.innerHTML = `<div class="hd"><span>${title}</span><button id="acClose">✕</button></div>${body}`;
   c.style.display = 'block';
-  $('acClose').onclick = () => { c.style.display = 'none'; };
+  $('acClose').onclick = () => { c.style.display = 'none'; if (onClose) onClose(); };
 }

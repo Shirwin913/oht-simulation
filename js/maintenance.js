@@ -179,7 +179,7 @@ function stepMaintVehicle(v, dt) {
       v.lift = Math.min(1, (v.lift || 0) + dt / LIFT_TIME); v.lifter.rail = v.lift;
       if (v.lift >= 1) {
         v.state = 'repair';
-        v.timer = (v.maintReq === 'pm' ? PM_TIME : REPAIR_TIME) * (0.75 + Math.random() * 0.5);
+        v.timer = (v.maintReq === 'pm' ? PM_TIME : REPAIR_TIME) * (0.75 + rndA() * 0.5);
         log(`🔧 ${v.id} 已降到地面，開始${v.maintReq === 'pm' ? '定期保養' : '維修'}`);
       }
       break;

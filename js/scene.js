@@ -5,7 +5,9 @@ const app = document.getElementById('app');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0f1419);
 scene.fog = new THREE.Fog(0x0f1419, 260, 520);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// 比較實驗（背景執行）不需要畫面：用一個什麼都不畫的假 renderer，省掉 WebGL
+const renderer = BENCH ? { domElement: document.createElement('canvas'), setPixelRatio() {}, setSize() {}, render() {}, shadowMap: {} }
+  : new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;

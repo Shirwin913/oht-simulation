@@ -3,29 +3,30 @@
 // 兩個主要畫面：
 //   ・主畫面：上位命令（MCS／OCS 派下來的指令）、天車回傳狀態、位置資訊
 //   ・快速操作：走行／捲揚／側移／旋轉／夾爪 五個軸的伺服、原點、寸動，防墜、I/O 感測器、警報清除
-// 異常排除照現場的順序：切手動 → 警報清除 →（依異常：伺服 ON、寸動、回原點…）→ 切自動。
+// 異常發生後天車會先「自動復歸」（自己重試），失敗才需要人工：
+//   按「警報清除」＝清掉異常碼，同時天車切成手動 →（依異常：伺服 ON、寸動、回原點…）→ 切自動。
 // 有「排除步驟」提示，按錯順序會在訊息列提醒（例如沒切手動不能清警報、捲揚不在原點不能走行）。
 // 畫面是依一般天車操作介面的功能做的通用教學版，不是任何廠商的實際軟體。
 
 // ---------- 各異常的排除步驟（教學用） ----------
 const STEP_TXT = {
-  confirm: '確認現場安全（前方軌道沒有人員、工具、掉落物）', release: '解除緊急停止', manual: '切手動（Auto → Manual）', clear: '按「警報清除」清掉異常碼',
+  confirm: '確認現場安全（前方軌道沒有人員、工具、掉落物）', release: '解除緊急停止', manual: '切手動（Auto → Manual）', clear: '按「警報清除」：清掉異常碼，天車同時切成手動',
   'servo:walk': '走行「伺服 On」', 'servo:hoist': '捲揚「伺服 On」', 'jog:walk': '走行「前進」寸動，讓讀碼器重新讀到條碼',
   claw: '夾爪「開」，人員把 FOUP 放正', 'home:hoist': '捲揚「原點」：吊帶收回', 'home:shift': '側移「原點」：滑台收回', auto: '切自動（Manual → Auto），天車恢復運行',
 };
 const RECOVERY = {
-  'E-101': ['manual', 'clear', 'servo:walk', 'auto'],
-  'E-102': ['manual', 'clear', 'jog:walk', 'auto'],
-  'E-103': ['confirm', 'manual', 'clear', 'auto'],
-  'E-104': ['confirm', 'release', 'manual', 'clear', 'auto'],
-  'E-201': ['manual', 'clear', 'claw', 'home:hoist', 'home:shift', 'auto'],
-  'E-202': ['manual', 'clear', 'home:hoist', 'home:shift', 'auto'],
-  'E-203': ['manual', 'clear', 'servo:hoist', 'home:hoist', 'home:shift', 'auto'],
+  'E-101': ['clear', 'servo:walk', 'auto'],
+  'E-102': ['clear', 'jog:walk', 'auto'],
+  'E-103': ['confirm', 'clear', 'auto'],
+  'E-104': ['confirm', 'release', 'clear', 'auto'],
+  'E-201': ['clear', 'claw', 'home:hoist', 'home:shift', 'auto'],
+  'E-202': ['clear', 'home:hoist', 'home:shift', 'auto'],
+  'E-203': ['clear', 'servo:hoist', 'home:hoist', 'home:shift', 'auto'],
 };
 const ESTOP_INFO = { code: 'E-104', title: '緊急停止（人員按下 E-STOP）',
   what: '有人在操作介面或現場按下了緊急停止，天車所有動作立刻停止。',
   impact: '跟天車故障停車一樣：停在軌道上，後面的車排隊。如果正在取放貨，吊帶和 FOUP 會停在半空中。',
-  steps: ['確認按下急停的原因已經排除、現場安全', '解除緊急停止', '切手動 → 警報清除', '確認各軸狀態正常後切自動'] };
+  steps: ['確認按下急停的原因已經排除、現場安全', '解除緊急停止', '警報清除（天車同時切成手動）', '確認各軸狀態正常後切自動'] };
 const AXIS_OF_CODE = { 'E-101': 'walk', 'E-102': 'walk', 'E-103': 'walk', 'E-104': 'walk', 'E-201': 'claw', 'E-202': 'hoist', 'E-203': 'hoist' };
 const ON_HOME = (v) => v.hoist < 0.005 && Math.abs(v.shift) < 0.002;
 
@@ -65,6 +66,7 @@ function stepDone(v, a, s) {
 function hmiTick(dt) {
   for (const v of vehicles) {
     if (!v.manual || v.estop || !v.man) continue;
+    if (v.homing) { stepHoming(v, dt); continue; }
     const m = v.man, mv = (cur, tgt, spd) => cur + Math.sign(tgt - cur) * Math.min(Math.abs(tgt - cur), spd * dt);
     if (m.hoist !== undefined) { v.hoist = mv(v.hoist, m.hoist, 0.45); v.hv = 0; if (v.hoist === m.hoist) delete m.hoist; }
     if (m.shift !== undefined) { v.shift = mv(v.shift, m.shift, 0.3); if (v.shift === m.shift) delete m.shift; }
@@ -77,6 +79,51 @@ function hmiTick(dt) {
       else { advance(v, step); v.odo += step; m.jog -= step; const a = vAlarm(v); if (a && a.codeCleared) { a.jogDist = (a.jogDist || 0) + step; if (a.jogDist >= 0.3) a.jogged = true; } }
     }
   }
+}
+
+// ---------- 歸原點：所有機構依序做一次原點校正 ----------
+//   每一軸先回到原點附近，再「慢速找原點感測器」：稍微離開、再慢慢回來，碰到原點感測器就把位置歸零。
+//   順序：捲揚（先把吊帶收回，其他機構才能安全動）→ 側移 → 旋轉 → 夾爪 → 防墜 → 走行位置歸零（重讀條碼）
+function homingPlan(v) {
+  const q = [];
+  const ax = (k, lbl, ...pts) => pts.forEach(([to, spd]) => q.push({ k, lbl, to, spd }));
+  ax('hoist', '捲揚回原點', [0, 0.45]); ax('hoist', '捲揚找原點感測器', [0.06, 0.1], [0, 0.04]);
+  ax('shift', '側移回原點', [0, 0.3]); ax('shift', '側移找原點感測器', [0.05, 0.08], [0, 0.03]);
+  ax('rot', '旋轉找原點感測器', [0.08, 0.1], [0, 0.04]);
+  if (v.carry) q.push({ k: 'note', lbl: '夾爪有貨：不開爪，只確認夾爪閉合訊號' });
+  else ax('claw', '夾爪開閉校正', [1, 1 / CLAW_TIME], [0, 1 / CLAW_TIME]);
+  ax('guard', '防墜收合／伸出校正', [1, 1 / GUARD_TIME], [0, 1 / GUARD_TIME]);
+  q.push({ k: 'enc', lbl: '走行位置歸零（重讀條碼）', t: 1.2 });
+  return q;
+}
+function startHoming(v) {
+  if (v.estop) return hmiMsg('緊急停止中，不能歸原點');
+  if (!v.manual) return hmiMsg('要先切「手動」才能歸原點');
+  const a = vAlarm(v); if (a && !a.codeCleared) return hmiMsg('異常碼還沒清除，請先按「警報清除」');
+  const off = ['walk', 'hoist', 'shift', 'rot', 'claw'].filter(k => !v.servo[k]);
+  if (off.length) return hmiMsg(`${off.map(k => AXIS_NAME[k]).join('、')}伺服 Off，無法歸原點，請先伺服 On`);
+  v.man = {}; v.manTouched = true;
+  const plan = homingPlan(v);
+  v.homing = { q: plan, n: plan.length, i: 0, t: 0 };
+  log(`🛠 ${v.id} 歸原點：所有機構依序做原點校正`);
+  hmiMsg('歸原點開始：捲揚 → 側移 → 旋轉 → 夾爪 → 防墜 → 走行位置歸零');
+}
+function stepHoming(v, dt) {
+  const h = v.homing, it = h.q[0];
+  if (!it) { v.homing = null; v.homed = simTime; log(`✔ ${v.id} 歸原點完成`); if (hmiV === v) hmiMsg('✔ 歸原點完成：所有機構都在原點，位置已歸零'); return; }
+  h.label = it.lbl;
+  const mv = (cur, tgt, spd) => cur + Math.sign(tgt - cur) * Math.min(Math.abs(tgt - cur), spd * dt);
+  let done = false;
+  if (it.k === 'note' || it.k === 'enc') {
+    h.t += dt;
+    if (h.t >= (it.t || 0.6)) { if (it.k === 'enc') v.encZero = v.odo || 0; done = true; h.t = 0; }
+  } else {
+    const key = it.k === 'rot' ? 'rot' : it.k;
+    const cur = v[key] || 0, nv = mv(cur, it.to, it.spd);
+    v[key] = nv; if (key === 'hoist') v.hv = 0;
+    done = nv === it.to;
+  }
+  if (done) { h.q.shift(); h.i++; }
 }
 
 // ---------- 按鈕動作 ----------
@@ -101,10 +148,11 @@ function hmiAct(act) {
     case 'auto': return hmiAuto(v, a);
     case 'clear':
       if (!a) return hmiMsg('目前沒有異常碼');
+      if (a.autoRec) return hmiMsg('天車正在自動復歸，請等它結果（自動復歸失敗才需要人工）');
       if (v.estop) return hmiMsg('緊急停止還沒解除，警報清不掉');
-      if (!v.manual) return hmiMsg('要先切「手動」才能清除警報');
-      if (RECOVERY[a.info.code][0] === 'confirm' && !a.confirmed) return hmiMsg('請先確認現場安全（勾選排除步驟第 1 項）');
-      a.codeCleared = true; log(`🛠 ${v.id} 警報清除（${a.info.code}）`); return hmiMsg('異常碼已清除。依照排除步驟繼續');
+      if (RECOVERY[a.info.code][0] === 'confirm' && !a.confirmed) return hmiMsg('請先確認現場安全（排除步驟第 1 項按「確認」）');
+      a.codeCleared = true; v.manual = true; v.v = 0;
+      log(`🛠 ${v.id} 警報清除（${a.info.code}），天車切手動`); return hmiMsg('異常碼已清除，天車已切成手動。依照排除步驟繼續');
     case 'confirm': if (a) { a.confirmed = true; hmiMsg('已確認現場安全'); } return;
     case 'estop':
       if (v.estop) {                                                   // 解除急停
@@ -120,9 +168,10 @@ function hmiAct(act) {
       v.servo[ax] = on; return hmiMsg(`${AXIS_NAME[ax]}伺服 ${on ? 'On' : 'Off'}`);
     }
     case 'home': {
+      if (axis === 'all') return startHoming(v);                       // 歸原點：所有機構依序校正
       if (!needManual(v, axis)) return;
       v.manTouched = true;
-      if (axis === 'all') { if (!v.servo.hoist || !v.servo.shift) return hmiMsg('捲揚或側移伺服 Off，無法歸原點'); v.man.hoist = 0; v.man.shift = 0; v.man.guard = 0; return hmiMsg('歸原點：捲揚收回、側移收回、防墜伸出'); }
+      if (axis === 'all') return startHoming(v);
       if (axis === 'hoist') v.man.hoist = 0;
       if (axis === 'shift') { if (v.hoist > 0.05) return hmiMsg('捲揚不在原點，側移不能動（吊帶還放著）'); v.man.shift = 0; }
       if (axis === 'claw') v.man.claw = 0;
@@ -161,7 +210,7 @@ function hmiAct(act) {
       if (axis === 'out' && v.hoist > 0.05) return hmiMsg('吊帶還放著，防墜不能伸出（會夾到吊帶）');
       v.manTouched = true; v.man.guard = axis === 'out' ? 0 : 1; return hmiMsg(`防墜${axis === 'out' ? '伸出' : '收合'}`);
     }
-    case 'stop': if (v.man) { v.man = {}; hmiMsg('停止：所有手動動作停止'); } return;
+    case 'stop': if (v.man || v.homing) { v.man = {}; if (v.homing) { v.homing = null; log(`🛠 ${v.id} 歸原點中斷`); } hmiMsg('停止：所有手動動作停止'); } return;
     case 'find': setFollow(v); return hmiMsg(`尋車：鏡頭跟隨 ${v.id}`);
     case 'online': setOffline(v, false); return renderHmi();
     case 'offline': setOffline(v, true); return renderHmi();
@@ -173,6 +222,7 @@ const AXIS_NAME = { walk: '走行', hoist: '捲揚', shift: '側移', rot: '旋�
 function hmiAuto(v, a) {
   if (!v.manual && !a) return hmiMsg('已經是自動模式');
   if (v.estop) return hmiMsg('緊急停止還沒解除');
+  if (v.homing) return hmiMsg('歸原點還在進行，等它完成');
   if (a) {
     const miss = RECOVERY[a.info.code].filter(s => s !== 'auto' && !stepDone(v, a, s));
     if (miss.length) return hmiMsg(`還不能切自動，還沒完成：${STEP_TXT[miss[0]]}`);
@@ -204,22 +254,22 @@ function hmiData(v) {
   const p = v.group.position, a = vAlarm(v), j = v.job;
   return {
     a, code: a && !a.codeCleared ? a.info.code : '0',
-    status: v.estop ? '緊急停止' : a ? '異常停止' : v.manual ? '手動模式' : v.state === 'idle' ? (v.parked ? '自動待機' : '自動巡航') : TRANSFERRING.includes(v.state) ? '自動取放中' : '自動運行',
+    status: v.estop ? '緊急停止' : a && a.autoRec ? '自動復歸中' : a && !a.codeCleared ? '異常停止' : a ? '手動復歸中' : v.homing ? '歸原點中' : v.manual ? '手動模式' : v.state === 'idle' ? (v.parked ? '自動待機' : '自動巡航') : TRANSFERRING.includes(v.state) ? '自動取放中' : '自動運行',
     cmd: j ? `T${String(j.id).padStart(6, '0')}` : '—', step: stateText(v), mode: v.manual ? 'Manual 模式' : 'Auto 模式',
     from: j ? j.from.name : '—', to: j ? j.to.name : '—', moveTo: v.target ? `${10000 + v.target.seg.to.id}` : '—', lot: j ? j.foup.id : '—',
     run: v.v > 0.02 ? 'moving' : 'stop', addr: 10000 + v.seg.to.id, sect: 1000 + v.seg.id, dist: Math.round(v.d * 1000),
     claw: v.claw > 0.99 ? (v.carry ? 'hold' : 'close') : v.claw < 0.01 ? 'open' : 'moving', carry: v.carry ? v.carry.id : 'none',
-    barcode: f1(v.seg.id * 1000 + v.d * 100), enc: f1(((v.odo || 0) * 100) % 100000), x: f1(p.x * 1000), y: f1(p.z * 1000),
+    barcode: f1(v.seg.id * 1000 + v.d * 100), enc: f1((((v.odo || 0) - (v.encZero || 0)) * 100) % 100000), x: f1(p.x * 1000), y: f1(p.z * 1000),
   };
 }
 const fld = (label, val, cls = '') => `<div class="hf"><span>${label}</span><b class="${cls}">${val}</b></div>`;
 function axisRow(v, ax, name, pos, spd, code, btns) {
-  const busy = v.man && ((ax === 'walk' && v.man.jog > 0) || v.man[ax] !== undefined);
-  return `<div class="ax"><div class="axn">${name}</div>
-    <button class="sv ${v.servo[ax] ? 'on' : ''}" data-a="servo:${ax}:${v.servo[ax] ? 'off' : 'on'}">伺服 ${v.servo[ax] ? 'On' : 'Off'}</button>
-    <div class="axv"><span>目前位置</span><b>${pos}</b></div><div class="axv"><span>目前速度</span><b>${spd}</b></div>
-    <div class="axv"><span>異常碼</span><b class="code ${code !== '0' ? 'bad' : ''}">${code}</b></div>
-    <div class="axb">${btns}<button data-a="stop">停止</button><span class="done ${busy ? '' : 'ok'}">${busy ? '動作中' : '命令完成'}</span></div></div>`;
+  const hk = v.homing && v.homing.q[0] && v.homing.q[0].k;
+  const busy = (v.man && ((ax === 'walk' && v.man.jog > 0) || v.man[ax] !== undefined)) || hk === ax || (ax === 'walk' && hk === 'enc');
+  return `<tr><th>${name}</th>
+    <td><button class="sv ${v.servo[ax] ? 'on' : ''}" data-a="servo:${ax}:${v.servo[ax] ? 'off' : 'on'}">${v.servo[ax] ? 'On' : 'Off'}</button></td>
+    <td class="num">${pos}</td><td class="num">${spd}</td><td><b class="code ${code !== '0' ? 'bad' : ''}">${code}</b></td>
+    <td class="ops">${btns}</td><td><span class="done ${busy ? '' : 'ok'}">${busy ? '動作中' : '完成'}</span></td></tr>`;
 }
 function vehicleSvg(d, v) {
   const warn = d.a ? `<g transform="translate(18,92)"><path d="M28 0 L56 50 L0 50 Z" fill="#ef4444"/><text x="28" y="42" fill="#fff" font-size="34" font-weight="700" text-anchor="middle">!</text></g>` : '';
@@ -249,32 +299,41 @@ function renderHmi() {
       <h5>天車回傳狀態</h5>${fld('走行狀態', d.run, 'w')}${fld('Address', d.addr)}${fld('Section', d.sect)}${fld('Distance', d.dist)}${fld('夾爪狀態', d.claw, 'w')}${fld('實際貨物 ID', d.carry)}</div>
       <div class="hpic">${vehicleSvg(d, v)}</div>
       <div class="hcol"><button class="estop ${v.estop ? 'on' : ''}" data-a="estop"><span>${v.estop ? '解除急停' : 'EMERGENCY STOP'}</span></button>
-      <div class="hbox"><h5>天車實際運行資訊</h5>${fld('軟體版本', '教學版 1.0')}${fld('Barcode', d.barcode)}${fld('Encoder', d.enc)}${fld('X 座標', d.x)}${fld('Y 座標', d.y)}${fld('Section ID', d.sect)}${fld('Address ID', d.addr)}${fld('連線 AP', v.ap ? v.ap.id : '—')}</div></div></div>`;
+      <div class="hbox"><h5>天車實際運行資訊</h5>${fld('軟體版本', '教學版 1.0')}${fld('Barcode', d.barcode)}${fld('Encoder', d.enc)}${fld('X 座標', d.x)}${fld('Y 座標', d.y)}${fld('Section ID', d.sect)}${fld('Address ID', d.addr)}${fld(COMM_MODE === 'mesh' ? 'Mesh 連線' : '連線 AP', v.ap ? (COMM_MODE === 'mesh' ? `${v.ap.id}（${v.meshHops} 跳）` : v.ap.id) : '—')}</div></div></div>`;
   } else if (hmiTab === 'quick') {
     const ac = AXIS_OF_CODE[a && a.info.code], code = ax => ac === ax ? d.code : '0';
     const io = [['IN-08 在席檢知', !!v.carry], ['IN-07 過物檢知', false], ['IN-06 吊帶張力 1', !(a && a.info.code === 'E-203')], ['IN-05 吊帶張力 2', true], ['IN-04 吊帶張力 3', true],
       ['IN-02 夾爪閉', v.claw > 0.99], ['IN-03 夾爪開', v.claw < 0.01], ['IN-01 偏擺檢知', false], ['前防墜收合', v.guard > 0.99], ['前防墜伸出', v.guard < 0.01], ['後防墜收合', v.guard > 0.99], ['後防墜伸出', v.guard < 0.01]];
-    body = `<div class="hquick"><div class="axes">
-      ${axisRow(v, 'walk', '走行', d.enc, f1(v.v * 1000), code('walk'), `<button data-a="home:walk" disabled title="走行沒有原點，用位置歸零">原點</button><button data-a="jog:walk:1">前進</button><button data-a="jog:walk:-1">後退</button>`)}
+    body = `<div class="hquick"><div>
+      <table class="axt"><tr><th>軸</th><th>伺服</th><th>目前位置</th><th>速度</th><th>異常碼</th><th>操作</th><th></th></tr>
+      ${axisRow(v, 'walk', '走行', d.enc, f1(v.v * 1000), code('walk'), `<button data-a="jog:walk:1">前進</button><button data-a="jog:walk:-1">後退</button>`)}
       ${axisRow(v, 'hoist', '捲揚', f1(-v.hoist * 1000), f1(v.man && v.man.hoist !== undefined ? 450 : 0), code('hoist'), `<button data-a="home:hoist">原點</button><button data-a="jog:hoist:1">下降</button><button data-a="jog:hoist:-1">上升</button>`)}
       ${axisRow(v, 'shift', '側移', f1(v.shift * 1000), f1(v.man && v.man.shift !== undefined ? 300 : 0), code('shift'), `<button data-a="home:shift">原點</button><button data-a="jog:shift:1">左移</button><button data-a="jog:shift:-1">右移</button>`)}
-      ${axisRow(v, 'rot', '旋轉', '0.0', '0', '0', `<button data-a="jog:rot:0">原點</button><button data-a="jog:rot:1">左旋</button><button data-a="jog:rot:-1">右旋</button>`)}
-      ${axisRow(v, 'claw', '夾爪', f1(-v.claw * 3000), '0', code('claw'), `<button data-a="claw:open">開</button><button data-a="claw:close">閉</button>`)}</div>
-      <div class="hside"><div class="hbtn2"><button data-a="find">尋車</button><button data-a="home:all">歸原點</button></div>
-      <div class="hbox"><h5>防墜</h5><div class="hbtn2"><button data-a="guard:out">伸出</button><button data-a="guard:in">收合</button></div></div>
-      <div class="io">${io.map(([n, on]) => `<div class="${on ? 'on' : ''}"><span>${n}</span><b>正常</b></div>`).join('')}</div></div>
-      <div class="hcol"><button class="estop ${v.estop ? 'on' : ''}" data-a="estop"><span>${v.estop ? '解除急停' : 'EMERGENCY STOP'}</span></button>${recoveryBox(v, a)}</div></div>`;
+      ${axisRow(v, 'rot', '旋轉', f1((v.rot || 0) * 1000), '0', '0', `<button data-a="jog:rot:0">原點</button><button data-a="jog:rot:1">左旋</button><button data-a="jog:rot:-1">右旋</button>`)}
+      ${axisRow(v, 'claw', '夾爪', f1(-v.claw * 3000), '0', code('claw'), `<button data-a="claw:open">開</button><button data-a="claw:close">閉</button>`)}
+      <tr><th>防墜</th><td colspan="4" class="mut">${v.guard < 0.01 ? '伸出（托住）' : v.guard > 0.99 ? '收合' : '動作中'}</td><td class="ops"><button data-a="guard:out">伸出</button><button data-a="guard:in">收合</button></td><td></td></tr>
+      <tr><td colspan="7" class="stopRow"><button data-a="stop">■ 停止所有手動動作</button></td></tr></table>
+      <details class="iod"><summary>I/O 感測器</summary><div class="io">${io.map(([n, on]) => `<div class="${on ? 'on' : ''}"><span>${n}</span></div>`).join('')}</div></details></div>
+      <div class="hcol">${recoveryBox(v, a)}<button class="estop small ${v.estop ? 'on' : ''}" data-a="estop"><span>${v.estop ? '解除急停' : 'E-STOP'}</span></button></div></div>`;
   } else body = `<div class="hempty">教學版沒有開放這個畫面。現場異常排除請用「快速操作」。</div>`;
-  const tabs = [['main', '主畫面'], ['quick', '快速操作'], ['run', '走行相關'], ['xfer', '取放相關'], ['io', 'I/O 狀態監控'], ['param', '參數設定'], ['log', '系統紀錄']];
+  const tabs = [['main', '主畫面'], ['quick', '快速操作（異常排除）']];
   el.innerHTML = `<div class="hwin" style="${hmiPos ? `left:${hmiPos[0]};top:${hmiPos[1]};transform:none` : ''}"><div class="hhead">
-      <div class="lamps"><button class="lamp" data-a="home:all">原點</button><button class="lamp ${v.manual ? 'man' : ''}" data-a="${v.manual ? 'auto' : 'manual'}">${v.manual ? '切自動' : '切手動'}</button><button class="lamp ${commOk(v) ? '' : 'off'}">連線</button></div>
+      <div class="hid">車號 <b class="no">${v.id}</b>${sel}</div>
       <div class="big ${a ? 'alarm' : ''}">${d.status}</div>
-      <div class="hid"><div>車號 <b class="no">${v.id}</b> ${sel}</div><div class="hbtn2"><button data-a="offline" ${v.offline ? 'disabled' : ''}>下線</button><button data-a="online" ${v.offline ? '' : 'disabled'}>上線</button></div>
-      <div class="mut">IP 10.0.1.${10 + vehicles.indexOf(v)}（示意） · 模擬時間 ${time}</div></div>
-      <button class="hclose" id="hmiClose">✕</button></div>
+      <div class="lamps">
+        <div class="lamp ${v.homing ? 'blinkL' : ON_HOME(v) ? '' : 'dim'}" title="指示燈：全軸在原點時亮綠燈；歸原點中閃爍">原點</div>
+        <div class="lamp ${v.manual ? 'man' : ''}" title="指示燈：綠＝自動、黃＝手動">${v.manual ? '手動' : '自動'}</div>
+        <div class="lamp ${commOk(v) ? '' : 'off'}" title="指示燈：跟控制系統連線正常時亮綠燈">連線</div></div>
+      <button class="hclose" id="hmiClose" title="關閉">✕</button></div>
+    <div class="htool">
+      <span class="tg">模式</span><button data-a="manual" ${v.manual ? 'disabled' : ''}>天車切手動</button><button data-a="auto" ${!v.manual && !a ? 'disabled' : ''}>天車切自動</button>
+      <span class="sep"></span><span class="tg">線上</span><button data-a="offline" ${v.offline ? 'disabled' : ''}>下線</button><button data-a="online" ${v.offline ? '' : 'disabled'}>上線</button>
+      <span class="sep"></span><button data-a="find">尋車</button><button data-a="home:all">歸原點</button>
+      <span class="hinfo">IP 10.0.1.${10 + vehicles.indexOf(v)}（示意）· ${time}</span></div>
+    <div class="htabs">${tabs.map(([k, n]) => `<button data-tab="${k}" class="${hmiTab === k ? 'cur' : ''}">${n}</button>`).join('')}</div>
     <div class="hbody">${body}</div>
-    <div class="hmsg"><span>🔔</span><div>${hmiMsgText || (a ? `${a.info.code} ${a.info.title}` : '')}</div><button data-a="clear" class="aclr">警報清除</button></div>
-    <div class="htabs">${tabs.map(([k, n]) => `<button data-tab="${k}" class="${hmiTab === k ? 'cur' : ''}">${n}</button>`).join('')}</div></div>`;
+    <div class="hmsg"><span>🔔</span><div>${v.homing ? `⟳ 歸原點中（${v.homing.i + 1}／${v.homing.n}）：${v.homing.label || ''}` : hmiMsgText || (a ? `${a.info.code} ${a.info.title}` : '')}</div><button data-a="clear" class="aclr">警報清除</button></div>
+    </div>`;
 }
 // 事件綁在外框上（畫面每 0.25 秒重畫，按鈕會換新）；滑鼠按著或下拉選單打開時先不重畫，免得按不到
 let hmiHold = false, hmiPos = null;
@@ -297,9 +356,10 @@ let hmiHold = false, hmiPos = null;
 }
 function recoveryBox(v, a) {
   if (!a) return `<div class="hbox rec"><h5>異常排除步驟</h5><p class="mut">這台車目前沒有異常。<br>想練習的話：按 EMERGENCY STOP，或在面板觸發「天車故障停車」「取放貨異常」，再回來這裡排除。</p></div>`;
-  const steps = RECOVERY[a.info.code] || ['manual', 'clear', 'auto'];
+  if (a.autoRec) return `<div class="hbox rec"><h5>${a.info.code} 自動復歸中…</h5><div class="mut">${a.info.title}</div><p>天車正在自己重試（約 ${Math.ceil(a.autoRec.t)} 秒）。<br>成功的話會自己繼續跑；失敗才需要人工復歸。</p></div>`;
+  const steps = RECOVERY[a.info.code] || ['clear', 'auto'];
   let next = true;
-  return `<div class="hbox rec"><h5>異常排除步驟：${a.info.code}</h5><div class="mut">${a.info.title}</div><ol>${steps.map(s => {
+  return `<div class="hbox rec"><h5>人工復歸步驟：${a.info.code}</h5><div class="mut">${a.info.title}${a.autoRecFailed ? '（自動復歸失敗）' : ''}</div><ol>${steps.map(s => {
     const ok = stepDone(v, a, s), cur = !ok && next; if (cur) next = false;
     const extra = s === 'confirm' && !ok ? ` <button data-a="confirm">確認</button>` : '';
     return `<li class="${ok ? 'ok' : cur ? 'cur' : ''}">${ok ? '✔' : cur ? '➜' : '・'} ${STEP_TXT[s]}${extra}</li>`;

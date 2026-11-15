@@ -153,6 +153,7 @@ function updateVehicle(v, dt) {
     const pa = pathAhead(v, LOOK);
     v.yielding = false;
     const { gap, leadV, lead } = leaderInfo(v, pa);
+    v.gapAhead = gap;                                                    // 給狀態燈用：前方有東西停車＝紫燈閃
     // 推車：前面擋路的是休息（或正要停下來休息）的空車，而且自己要開過它的位置 → 叫它往前開
     if (lead && lead.state === 'idle' && !lead.fault && (lead.parked || lead.target) && gap < PUSH_GAP && distToTarget(v) > gap + 0.5) {
       if (lead.parked) { pushCount++; lead.pushedBy = v.id; }        // 次數太多，不寫進紀錄，只統計
@@ -181,7 +182,7 @@ function updateVehicle(v, dt) {
       if (st === 'idle') { v.parked = true; return; }                 // 到了休息位置：停車
       if (st === 'toMaint') { v.state = 'maintLower'; log(`🔧 ${v.id} 到達捲揚機，連同軌道一起降到地面`); return; }
       if (st === 'toPick') { v.op = 'pick'; waitSum += simTime - v.job.created; waitN++; v.job.pickedAt = simTime;
-        waitByPri[v.job.pri][0] += simTime - v.job.created; waitByPri[v.job.pri][1]++; }
+        waitByPri[v.job.pri][0] += simTime - v.job.created; waitByPri[v.job.pri][1]++; if (benchWaits) benchWaits.push(simTime - v.job.created); }
       else v.op = 'drop';
       const port = v.op === 'pick' ? v.job.from : v.job.to;
       if (port.owner.type === 'machine') { v.state = 'e84'; v.timer = 0; v.e84Wait = 0; port.e84 = v; }   // 機台 Load Port：先做 E84 交握
@@ -282,8 +283,8 @@ function stepTransfer(v, dt) {
         const f = v.carry;
         f.carrier = null; placeFoupAt(f, port);
         port.foup = f; port.reserved = false; f.port = port; f.job = null; v.carry = null; v.claw = 0;
-        if (port.owner.type === 'stb') { f.state = 'buffered'; f.timer = STB_DWELL * (0.3 + Math.random() * 0.7); }
-        else { f.state = 'processing'; f.timer = procTime * (0.7 + Math.random() * 0.6); }
+        if (port.owner.type === 'stb') { f.state = 'buffered'; f.timer = STB_DWELL * (0.3 + rndD() * 0.7); }
+        else { f.state = 'processing'; f.timer = procTime * (0.7 + rndD() * 0.6); }
         log(`${v.id} 放貨 ${f.id} → ${port.name}`);
         v.state = 'raise';
       }
@@ -359,7 +360,7 @@ function stepPorts(dt) {
     if (f.state === 'processing' || f.state === 'buffered') { f.timer -= dt; if (f.timer <= 0) f.state = 'ready'; }
   }
 }
-const pick = a => a[Math.floor(Math.random() * a.length)];
+const pick = a => a[Math.floor(rndD() * a.length)];
 // 從 Port a 沿軌道開到 Port b 的距離（單向軌道，可能要繞一圈）
 function routeDist(a, b) {
   if (a.seg === b.seg && b.d >= a.d) return b.d - a.d;
@@ -388,11 +389,11 @@ function dispatch() {
     else {
       // 機台 → 下一台機台（60%，隨機）或最近的空 STB 儲格（40%）；沒空位就改去另一種
       const c = freeMachines.filter(q => q.owner !== p.owner);
-      const toMachine = c.length && (Math.random() < 0.6 || !freeStbs.length);
+      const toMachine = c.length && (rndD() < 0.6 || !freeStbs.length);
       // 下一台機台：從沿軌道最近的 NEXT_TOOL_POOL 台空機台裡隨機挑（全廠隨機的話，車會一直繞大半圈，主幹線塞爆）
       //   另外 CROSS_ZONE 的機率送到其他區塊的機台（會走區塊之間的連接線）
       const reach = c.filter(q => routeDist(p, q) < Infinity);           // 軌道封鎖時有些機台到不了
-      if (toMachine && reach.length) dest = take(freeMachines, Math.random() < CROSS_ZONE ? pick(reach)
+      if (toMachine && reach.length) dest = take(freeMachines, rndD() < CROSS_ZONE ? pick(reach)
         : pick(reach.map(q => [routeDist(p, q), q]).sort((a, b) => a[0] - b[0]).slice(0, NEXT_TOOL_POOL).map(x => x[1])));
       else { const q = nearest(p, freeStbs); if (q) dest = take(freeStbs, q); }
     }
@@ -405,6 +406,8 @@ function dispatch() {
   // 2. 派車：每筆任務派給沿軌道最近的閒置天車（先建立的任務先派）
   const idle = vehicles.filter(v => v.state === 'idle' && !v.maintReq && !v.fault && !v.offline && !v.manual && commOk(v));   // 通訊中斷的車收不到指令   // 下線的車不派任務   // 排隊等維修的車不派任務
   const order = jobs.filter(j => !j.vehicle).sort((a, b) => b.pri - a.pri || a.created - b.created);   // 特急 → 急件 → 一般，同級先來先派
+  if (DISPATCH_MODE === 'auto') return autoAssign(idle, order);
+  if (hostDown) return;                                      // 派車系統當機：中央派車停止（alarms.js）
   for (const job of order) {
     if (!idle.length) break;
     let best = null, bd = Infinity;
@@ -416,6 +419,35 @@ function dispatch() {
     idle.splice(idle.indexOf(best), 1);
     job.vehicle = best; best.job = job; best.state = 'toPick'; setTarget(best, job.from);
     log(`${best.id} 派車 ${job.pri ? '【' + PRI_NAME[job.pri] + '】' : ''}${job.foup.id}：${job.from.name} → ${job.to.name}`);
+  }
+}
+
+// ---------- 天車自主接任務（競標）----------
+//   MCS 只把任務公告出去，不指定車；閒置的天車自己看「附近」的任務、自己算路線距離出價，
+//   出價最好（最近、優先級高）的車得標。太遠的任務沒人搶時，等越久公告範圍越大，最後一定有車接。
+let DISPATCH_MODE = 'central';
+const AUTO_RANGE = 45;        // 天車只看沿軌道這麼近的任務（公尺）
+const AUTO_GROW = 1.5;        // 任務每多等 1 秒，公告範圍多 1.5 公尺
+let autoStat = { claims: 0, bids: 0, contested: 0 };
+function autoAssign(idle, order) {
+  const bids = [];
+  for (const job of order) {
+    const range = AUTO_RANGE + (simTime - job.created) * AUTO_GROW;
+    for (const v of idle) {
+      const d = planRoute(v, job.from.seg, job.from.d).dist;
+      if (d <= range) bids.push({ v, job, d, score: d - job.pri * 40 });   // 急件／特急出價加分
+    }
+  }
+  bids.sort((a, b) => a.score - b.score);
+  const takenV = new Set(), takenJ = new Set(), nBid = new Map();
+  for (const b of bids) nBid.set(b.job, (nBid.get(b.job) || 0) + 1);
+  for (const b of bids) {
+    if (takenV.has(b.v) || takenJ.has(b.job)) continue;
+    takenV.add(b.v); takenJ.add(b.job);
+    const job = b.job, v = b.v, k = nBid.get(job);
+    job.vehicle = v; v.job = job; v.state = 'toPick'; setTarget(v, job.from);
+    autoStat.claims++; autoStat.bids += k; if (k > 1) autoStat.contested++;
+    log(`🤝 ${v.id} 自主接任務 ${job.pri ? '【' + PRI_NAME[job.pri] + '】' : ''}${job.foup.id}（${k} 台出價，距離 ${Math.round(b.d)} m 最近）`);
   }
 }
 

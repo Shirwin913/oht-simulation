@@ -30,13 +30,18 @@ function updateVisuals(t) {
     // 近的畫完整細節，遠的只畫簡化外形（被跟隨的車和透視模式一律完整）
     const near = xray || v === followed || cam.distanceTo(v.group.position) < LOD_DIST;
     placeVehicle(v, near); v.group.visible = near;
-    // LED 燈條：綠＝行走／閒置，黃（閃）＝吊掛作業中
-    const hoisting = !['idle', 'toPick', 'toDrop', 'toMaint'].includes(v.state);
-    let ledC = hoisting ? C.amber : C.green, ledK = hoisting ? 1.6 * pulse : (v.state === 'idle' ? 0.8 : 1.6);
-    if (v.state === 'idle' && v.parked) ledK = 0.25;                     // 休息中：綠燈調暗
+    // 狀態燈（照現場天車）：白＝待機、綠＝有任務或行駛中、綠燈閃＝取放貨中、紫燈閃＝前方有東西停車
+    const blink = Math.sin(t * 9) > 0 ? 1.8 : 0.12;
+    const transferring = TRANSFERRING.includes(v.state);
+    const moving = ['idle', 'toPick', 'toDrop', 'toMaint'].includes(v.state);
+    let ledC = C.green, ledK = 1.6;
+    if (transferring) ledK = blink;                                                   // 取放貨：綠燈閃
+    else if (moving && v.v < 0.05 && v.gapAhead < 1.5) { ledC = C.purple; ledK = blink; }   // 前方有車／障礙停車：紫燈閃
+    else if (v.state === 'idle' && !v.job && v.v < 0.05) { ledC = C.white; ledK = 1.1; }  // 待機（沒任務、停著）：白燈
     const lt = v.id + (v.job && v.job.pri ? ' ' + PRI_NAME[v.job.pri] : '');   // 名牌：載急件／特急的車標出來
     if (v.labelText !== lt) { v.labelText = lt; v.label.userData.draw(lt); }
-    if (v.offline && !v.job && !v.fault) { ledC = C.white; ledK = 0.35; }   // 下線（沒有任務）：暗白色
+    if (v.offline && !v.job && !v.fault && ledC !== C.purple) { ledC = C.white; ledK = 0.45; }   // 下線（沒有任務）：暗白色
+    if (v.manual && !v.fault) { ledC = C.amber; ledK = 1.4; }                              // 手動模式：黃燈
     if (v.state === 'toMaint' || MAINT_STATES.includes(v.state)) { ledC = C.cyan; ledK = v.state === 'repair' ? 1.2 : 1.6 * pulse; }   // 維修區：青色
     if (v.fault) { ledC = C.red; ledK = 1.8 * pulse; }                // 異常：紅燈閃
     if (near) {
@@ -88,4 +93,4 @@ function loop() {
   uiT += dt; if (uiT > 0.25) { uiT = 0; updateUI(); }
 }
 log('模擬開始：' + vehicles.length + ' 台天車上線');
-updateUI(); loop();
+if (BENCH) benchRun(); else { updateUI(); loop(); }
