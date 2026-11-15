@@ -84,7 +84,7 @@ const CHAPTERS = [
     { t: 'Lot 的優先級', x: '每個 Lot 有優先級：一般、急件、特急。這個表格比較各級的平均等車時間；FOUP 色標橘色是急件、紅色是特急。', pre: () => { closeCards(); closeHmi(); setFollow(null); }, el: '.priBox' },
     { t: '插一筆特急', x: '按「插一筆特急」，把一個還沒派車的 Lot 改成特急。', el: '#btnHot', act: { fn: () => { TOUR.ctx.hot = insertHotLot(); } } },
     { t: '派車', x: '有空車時，系統會先派特急。等它被派到車…', el: '.priBox', wait: () => TOUR.ctx.hot && TOUR.ctx.hot.job && TOUR.ctx.hot.job.vehicle },
-    { t: '跟隨特急的車', x: '天車名牌上會標「特急」。在匯流點，特急載貨的車路權最大，其他車要讓它先過；但等很久的一般車分數也會一直加，不會永遠插不進去。', pre: () => { TOUR.ctx.v = TOUR.ctx.hot.job.vehicle; setFollow(TOUR.ctx.v); }, el: '#followBar' },
+    { t: '跟隨特急的車', x: '天車名牌上會標「特急」。在匯流點，特急載貨的車路權最大，其他車要讓它先過；但等很久的一般車分數也會一直加，不會永遠插不進去。', pre: () => { const h = TOUR.ctx.hot; TOUR.ctx.v = h && h.job && h.job.vehicle; if (TOUR.ctx.v) setFollow(TOUR.ctx.v); }, el: '#followBar' },
     { t: '路權規則', x: '「說明」裡有完整的路權排序和規則。', el: '#btnPriInfo', act: true },
     { t: '空車休息、推車', x: '沒接到指令的空車會停在軌道上休息，後面有車要過才會被「推」著往前開。按「休息／推車」可以看說明。這章結束。', el: '#btnParkInfo', act: true },
   ] },

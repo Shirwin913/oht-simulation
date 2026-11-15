@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OHT 天車 3D 模擬</title>
-<link rel="stylesheet" href="css/style.css?v=cea9304e1427">
+<link rel="stylesheet" href="css/style.css?v=18b0219849eb">
 </head>
 <body>
 <div id="app"></div>
@@ -31,12 +31,13 @@
     <div class="stats">
       <div class="stat"><div class="k">完成搬運</div><div class="v" id="done">0</div></div>
       <div class="stat"><div class="k">平均搬運週期</div><div class="v" id="avgCycle">–</div></div>
-      <div class="stat"><div class="k">等待派車</div><div class="v" id="queue">0</div></div>
+      <div class="stat"><div class="k">已預約目的地／等待派車</div><div class="v" id="queue">0</div></div>
       <div class="stat"><div class="k">搬運中任務</div><div class="v" id="active">0</div></div>
       <div class="stat"><div class="k">FOUP 總數</div><div class="v" id="foupTotal">0</div></div>
       <div class="stat"><div class="k">STB 儲格使用</div><div class="v" id="stbUse">–</div></div>
       <div class="stat"><div class="k">天車數</div><div class="v" id="vehTotal">0</div></div>
     </div>
+    <div class="card"><div class="ch">📦 儲位與機台出貨</div><div id="storageInfo"></div></div>
     <div class="sec">天車狀態（點選可跟隨）</div>
     <div style="max-height:240px;overflow:auto"><table><tbody id="vehList"></tbody></table></div>
     <div class="sec">事件紀錄</div>
@@ -49,6 +50,8 @@
     <div class="row"><label style="flex:none;display:flex;align-items:center;gap:5px"><input type="checkbox" id="showLabels" checked>標籤</label>
       <label style="flex:none;display:flex;align-items:center;gap:5px"><input type="checkbox" id="xray">透視（看車殼裡面）</label></div>
     <div class="sec">模擬參數</div>
+    <div class="row"><label for="stbFill">開場儲格使用率</label><select id="stbFill"><option value="40">40%</option><option value="98">98%</option><option value="99">99%</option><option value="100">100%</option></select><button id="applyStbFill">重新開始</button></div>
+    <div class="mut">重新開始會重設本次模擬；運行後佔用率會隨物流變化。</div>
     <div class="row"><label>模擬速度</label><input type="range" id="speed" min="0.5" max="20" step="0.5" value="2"><span class="val" id="speedVal">2x</span></div>
     <div class="row"><label>加工時間</label><input type="range" id="procTime" min="60" max="3000" step="60" value="1500"><span class="val" id="procVal">1500s</span></div>
     <div class="row"><label>最高車速</label><input type="range" id="vmax" min="1" max="6" step="0.5" value="3.5"><span class="val" id="vmaxVal">3.5</span></div>
@@ -71,6 +74,11 @@
 
   <!-- 系統功能：優先級、通訊與派車、維修區 -->
   <div class="ptab" data-ptab="sys">
+    <div class="card"><div class="ch">📦 NTB 人員投取貨站</div>
+      <div class="mut">每區一站，每站固定一座投貨、一座取貨；台面壓克力罩＋車窗式氣動門。平時升起封閉，允許投取貨時降入台體。取貨放到旁邊鐵架；投貨優先使用架上同類 FOUP。青色色標＝空盒。</div>
+      <div class="row"><label for="ntbSelect">選擇站點</label><select id="ntbSelect"></select><button id="ntbView">查看站點</button></div>
+      <div id="ntbInfo"></div><div class="mut">投貨座（放貨進天車系統）</div><div class="alarmBtns"><button id="ntbOpen">開門允許投貨</button><button id="ntbClose">結束投貨／升門</button><button id="ntbEmpty">投入空 FOUP</button><button id="ntbLoaded">投入有貨 FOUP</button></div><div class="mut">取貨座（從天車系統取貨）</div><div class="alarmBtns"><button id="ntbExport">叫空 FOUP 出庫</button><button id="ntbTake">人員取走</button></div><div id="ntbMessage" role="status"></div>
+    </div>
     <div class="card priBox"><div class="ch">🔥 優先級與路權</div><div id="priInfo" class="mut"></div>
       <div class="alarmBtns one"><button id="btnHot">插一筆特急</button></div></div>
     <div class="card commBox"><div class="ch">📶 通訊與派車</div>
@@ -107,6 +115,8 @@
       <button id="btnCommInfo">無線 AP</button><button id="btnMeshInfo">Mesh 網狀網路</button>
       <button id="btnAutoInfo">自主接任務</button><button id="btnE84Info">E84 交握</button>
       <button id="btnMaintInfo">維修區捲揚機</button>
+      <button id="btnDispatchInfo">派工與派車邏輯</button><button id="btnQtimeInfo">Q-time 是什麼</button>
+      <button id="btnDirectInfo">機台直送 vs 回儲位</button>
     </div>
     <div class="sec">天車狀態燈（前後燈帶）</div>
     <div class="legend">
@@ -146,22 +156,23 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="js/rng.js?v=fc291fc18429"></script>
 <script src="js/vehicle_model.js?v=dd110a72b6d9"></script>
-<script src="js/config.js?v=5899efe6d842"></script>
+<script src="js/config.js?v=b618c91508af"></script>
 <script src="js/network.js?v=d065da778570"></script>
 <script src="js/scene.js?v=e52d3e44bd6d"></script>
 <script src="js/track.js?v=36c4f01254bf"></script>
-<script src="js/factory.js?v=71ca6dfe8fbb"></script>
-<script src="js/foup.js?v=04d36ffe0b33"></script>
+<script src="js/factory.js?v=d928126e9810"></script>
+<script src="js/foup.js?v=67611d595520"></script>
 <script src="js/vehicle.js?v=d02a7604619b"></script>
-<script src="js/simulation.js?v=f910fb3b9455"></script>
-<script src="js/alarms.js?v=26337c32fa5b"></script>
+<script src="js/simulation.js?v=e049c74eed69"></script>
+<script src="js/alarms.js?v=aa148b2eee55"></script>
 <script src="js/maintenance.js?v=88ad0812d76a"></script>
 <script src="js/comm.js?v=dbe71737e842"></script>
-<script src="js/hmi.js?v=e930663682b9"></script>
+<script src="js/hmi.js?v=7dfe68fcee82"></script>
 <script src="js/hmi_detail.js?v=b09f584256c4"></script>
-<script src="js/ui.js?v=65de9a6bdf8b"></script>
-<script src="js/tour.js?v=98b6e6ca26a4"></script>
+<script src="js/ntb.js?v=da18e0f7c5fd"></script>
+<script src="js/ui.js?v=9b4d38884c4f"></script>
+<script src="js/tour.js?v=8683d682a3e9"></script>
 <script src="js/bench.js?v=db960b3cc62b"></script>
-<script src="js/main.js?v=c3ce5f51bd12"></script>
+<script src="js/main.js?v=cbf36fd14c01"></script>
 </body>
 </html>

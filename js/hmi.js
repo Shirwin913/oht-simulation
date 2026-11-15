@@ -39,7 +39,7 @@ function cargoMust(v, a) {
   if (a.homeFailed) return '天車無法復歸，要推車，貨不能留在車上';
   if (a.clawUnknown && v.claw > 0.01 && v.claw < 0.99) return '夾爪狀態不明（開極限、閉極限都沒亮），不能確定 FOUP 有沒有夾牢';
   const p = transferPort(v);
-  if (p && p.owner.type === 'machine' && v.hoist > 0.3) { const left = hoistDepth(p) - v.hoist; if (left < 0.15) return `貨離機台只剩約 ${Math.max(5, Math.round(left * 1000))} mm，直接放到機台上`; }
+  if (p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && v.hoist > 0.3) { const left = hoistDepth(p) - v.hoist; if (left < 0.15) return `貨離機台只剩約 ${Math.max(5, Math.round(left * 1000))} mm，直接放到機台上`; }
   return null;
 }
 const ESTOP_INFO = { code: 'E-104', title: '緊急停止（人員按下 E-STOP）',
@@ -536,8 +536,8 @@ let hmiHold = false, hmiPos = null;
 }
 // E84 訊號燈：天車送出的、機台送來的（教學用，照目前的取放步驟推算）
 function e84Signals(v) {
-  const p = transferPort(v), atMachine = p && p.owner.type === 'machine' && (v.state === 'e84' || TRANSFERRING.includes(v.state));
-  const S = { VALID: 0, CS_0: 0, TR_REQ: 0, BUSY: 0, COMPT: 0, L_REQ: 0, U_REQ: 0, READY: 0, HO_AVBL: p && p.owner.type === 'machine' ? +hoAvbl(p) : 0, ES: 1 };
+  const p = transferPort(v), atMachine = p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && (v.state === 'e84' || TRANSFERRING.includes(v.state));
+  const S = { VALID: 0, CS_0: 0, TR_REQ: 0, BUSY: 0, COMPT: 0, L_REQ: 0, U_REQ: 0, READY: 0, HO_AVBL: p && (p.owner.type === 'machine' || p.owner.type === 'ntb') ? +hoAvbl(p) : 0, ES: 1 };
   if (!atMachine) return { S, p: atMachine ? p : null };
   const st = v.state, req = v.op === 'pick' ? 'U_REQ' : 'L_REQ', k = v.state === 'e84' ? Math.floor(v.timer / E84_TIME * 4) : 9;
   if (st === 'e84end') { S.VALID = S.CS_0 = S.COMPT = 1; S.READY = v.timer < E84_END_TIME / 2 ? 1 : 0; return { S, p }; }

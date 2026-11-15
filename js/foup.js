@@ -69,7 +69,7 @@ const FB = (() => {
 })();
 // 設定某個 FOUP 的世界矩陣
 function setFoupMatrix(f, m) {
-  for (const p of FB.parts) { FB.tmp.multiplyMatrices(m, p.local); p.im.setMatrixAt(f.idx, FB.tmp); }
+  for (const p of FB.parts) { if (f.empty && p === FB.parts[1]) FB.tmp.makeScale(0,0,0); else FB.tmp.multiplyMatrices(m, p.local); p.im.setMatrixAt(f.idx, FB.tmp); }
   FB.dirty = true;
 }
 const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.Euler(), _fv = new THREE.Vector3(), _fs = new THREE.Vector3(1, 1, 1);
@@ -96,18 +96,23 @@ function updateFoupInstances() {
 }
 // 批號色標：一般 Lot 隨機顏色；急件橘色、特急紅色（一眼就看得出來）
 function setFoupTag(f) {
-  FB.tag.setColorAt(f.idx, f.pri === 2 ? new THREE.Color(0xff1f1f) : f.pri === 1 ? new THREE.Color(0xff8a00) : new THREE.Color().setHSL(0.45 + Math.random() * 0.25, 0.25, 0.75));
+  FB.tag.setColorAt(f.idx, f.empty ? new THREE.Color(0x22d3ee) : f.pri === 2 ? new THREE.Color(0xff1f1f) : f.pri === 1 ? new THREE.Color(0xff8a00) : new THREE.Color().setHSL(0.45 + Math.random() * 0.25, 0.25, 0.75));
   if (FB.tag.instanceColor) FB.tag.instanceColor.needsUpdate = true;
 }
-function spawnFoup(port, state) {
+function spawnFoup(port, state, empty = false) {
   const idx = FB.free.length ? FB.free.pop() : FB.used++;
-  const f = { id: 'LOT' + String(++foupSeq).padStart(4, '0'), idx, state, timer: 0, job: null, port, carrier: null, rot: 0, localRot: 0 };
+  const f = { empty, id: 'LOT' + String(++foupSeq).padStart(4, '0'), idx, state, timer: 0, job: null, port, carrier: null, rot: 0, localRot: 0 };
   const r = rndD(); f.pri = r < 0.03 ? 2 : r < 0.15 ? 1 : 0;              // 約 12% 急件、3% 特急
+  if (empty) f.pri = 0;
   setFoupTag(f);
   placeFoupAt(f, port);
   if (state === 'processing') f.timer = procTime * (0.2 + rndD());
   port.foup = f; return f;
 }
 machines.forEach(m => m.ports.forEach(p => { if (rndD() < 0.55) spawnFoup(p, 'processing'); }));
-// STB 儲格一開始約 4 成放著暫存中的 FOUP（在製品 WIP）
-ports.forEach(p => { if (p.owner.type === 'stb' && rndD() < 0.4) { const f = spawnFoup(p, 'buffered'); f.timer = rndD() * STB_DWELL; } });
+// 洗牌後依比例放貨，確保開場佔用率接近設定值，且不集中於前幾條 Bay。
+const initialStbs = ports.filter(p => p.owner.type === 'stb');
+for (let i = initialStbs.length - 1; i > 0; i--) { const j = Math.floor(rndD() * (i + 1)); [initialStbs[i], initialStbs[j]] = [initialStbs[j], initialStbs[i]]; }
+initialStbs.slice(0, Math.round(initialStbs.length * STB_INITIAL_FILL / 100)).forEach(p => {
+  const f = spawnFoup(p, 'buffered', rndD() < 0.15); f.timer = rndD() * STB_DWELL;
+});

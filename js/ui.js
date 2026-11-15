@@ -4,6 +4,7 @@
 const $ = id => document.getElementById(id);
 let lastStock = -1;
 function updateUI() {
+  updateNtbUI();
   $('simTime').textContent = fmt(simTime);
   $('done').textContent = completed;
   $('tph').textContent = simTime > 60 ? Math.round(completed / (simTime / 3600)) : '–';
@@ -13,7 +14,11 @@ function updateUI() {
   $('active').textContent = jobs.filter(j => j.vehicle).length;
   $('foupTotal').textContent = ports.filter(p => p.foup).length + vehicles.filter(v => v.carry).length;
   const stbPorts = ports.filter(p => p.owner.type === 'stb'), used = stbPorts.filter(p => p.foup).length;
-  $('stbUse').textContent = `${used}/${stbPorts.length}`;
+  $('stbUse').textContent = `${used}/${stbPorts.length}（${(used / stbPorts.length * 100).toFixed(1)}%）`;
+  const waitingStorage = ports.filter(p => p.owner.type === 'machine' && p.foup && p.foup.storageWaitingSince != null && !p.foup.job);
+  const emptyStbs = stbPorts.filter(p => !p.foup).length, reservedStbs = stbPorts.filter(p => !p.foup && p.reserved).length;
+  const longestStorage = waitingStorage.reduce((n,p) => Math.max(n, simTime - p.foup.storageWaitingSince), 0);
+  $('storageInfo').innerHTML = `實體空儲格：${emptyStbs} 格（已預約 ${reservedStbs} 格）<br>等待空儲位：<b>${waitingStorage.length}</b> 個 FOUP<br>目前最久等待：${Math.floor(longestStorage)} 秒<br>已取得儲位的平均等待：${storageWaitCount ? (storageWaitSum / storageWaitCount).toFixed(1) + ' 秒' : '—'}` + (waitingStorage.length ? `<details ${$('storageInfo').querySelector('details[open]') ? 'open' : ''}><summary>查看等待中的機台</summary>${waitingStorage.map(p => `<div>${p.name} · ${p.foup.id} · ${Math.floor(simTime - p.foup.storageWaitingSince)} 秒<br>${p.foup.storageWaitReason}</div>`).join('')}</details>` : '');
   $('vehTotal').textContent = vehicles.length;
   $('vehCount').textContent = vehicles.length;
   $('vehList').innerHTML = vehicles.map(v => {
@@ -98,6 +103,9 @@ $('btnAutoInfo').onclick = () => openInfoCard('auto');
 $('btnHot').onclick = () => { insertHotLot(); updateUI(); };
 $('btnPriInfo').onclick = () => openInfoCard('pri');
 $('btnParkInfo').onclick = () => openInfoCard('park');
+$('btnQtimeInfo').onclick = () => openInfoCard('qtime');
+$('btnDispatchInfo').onclick = () => openInfoCard('dispatch');
+$('btnDirectInfo').onclick = () => openInfoCard('direct');
 $('btnPm').onclick = () => { const v = sendPm(); if (v) setFollow(v); updateUI(); };
 $('btnMaintView').onclick = () => focusMaint(LIFTERS[0]);
 $('btnMaintView2').onclick = () => focusMaint(LIFTERS[1]);
@@ -228,6 +236,49 @@ const INFO_CARDS = {
     好幾台空車停在一起時，前面那台會被後面一台一台推走。</p>
     <h4>有任務的時候</h4><p>派車一樣找沿軌道最近的空車，休息中的車直接從原地出發。</p>
     <ul class="impact"><li>空車休息：省電、減少磨耗，主幹線上也比較不擠</li><li>代價：停的車擋到後面時，後車要先慢下來等它開走</li></ul>`],
+  qtime: ['⏱ Q-time（等候時間限制）', `
+    <h4>Q-time 是什麼</h4><p>Q-time（Queue time）是<b>兩道製程之間最多能等多久</b>的規定。例如晶圓做完清洗後，要在 4 小時內進爐管；
+    超過時間，表面可能重新氧化或沾上微粒，這批貨就可能要重工、送工程判定，甚至報廢。</p>
+    <h4>對派工和搬運的影響</h4><ul>
+      <li>有 Q-time 的貨，派工時通常會被提高優先順序；越接近到期越急。</li>
+      <li>搬運越少繞路越好：少回一次儲位，就少等一段時間（見「機台直送」說明）。</li>
+      <li>天車異常、軌道塞車、派車系統當機，都可能讓貨超過 Q-time。所以現場異常要盡快復歸。</li></ul>
+    <h4>這個模擬</h4><p>目前還沒有模擬 Q-time，只有一般、急件、特急三種優先級。</p>
+    <ul class="impact"><li>超過 Q-time：可能要重工、工程判定或報廢，損失比單純延遲大很多</li></ul>`],
+  dispatch: ['📋 派工與派車邏輯（這個模擬）', `
+    <p class="mut">以下是這個模擬的簡化規則，用來教學；實際工廠以 MCS／RTD 的設定為準。</p>
+    <h4>第一步：決定貨要去哪（產生搬運任務）</h4>
+    <table class="kt"><tr><th>貨在哪裡</th><th>要去哪裡</th></tr>
+      <tr><td>STB 儲位</td><td>放滿暫存時間後（最長 40 分鐘的 30%～100%），送到沿軌道最近的空機台</td></tr>
+      <tr><td>機台做完</td><td>做完時抽一次決定流向、之後不改：60% 直接送下一台機台、40% 回 STB</td></tr>
+      <tr><td>　└ 送機台</td><td>從最近的 12 台空機台隨機挑一台；另有 25% 機率挑全廠任何一台（多半跨區）</td></tr>
+      <tr><td>　└ 回 STB</td><td>最近的空儲位；儲位滿了就留在機台 Port 上等，不改送機台</td></tr>
+      <tr><td>NTB 投貨座</td><td>最近的空儲位</td></tr>
+      <tr><td>空 FOUP</td><td>留在儲位，等人員下 NTB 出庫指令</td></tr></table>
+    <ul><li>特急、急件比一般貨先挑目的地，避免空機台被一般貨搶光。</li>
+      <li>目的地選好就先「預約」，一個空位只給一筆任務。</li>
+      <li>每顆貨開場抽一次優先級：約 3% 特急、12% 急件，其他一般；空 FOUP 一律一般。</li></ul>
+    <h4>第二步：派哪台車</h4><ul>
+      <li><b>中央派車</b>：任務依「特急 → 急件 → 一般」排序，同級先建立的先派；每筆派給沿軌道最近的閒置天車。</li>
+      <li><b>自主接任務</b>：天車自己看附近 45 公尺內的任務來搶，範圍會隨等待時間慢慢擴大。</li>
+      <li>故障、下線、手動、通訊中斷、排隊等保養的車不會被派。</li></ul>
+    <h4>跟真實 RTD 的差別</h4><p>這個模擬是「<b>貨挑機台</b>」：貨準備好就找最近的空機台。
+    真實工廠多半是「<b>機台挑貨</b>」：機台空了，RTD 從所有在等的貨裡，依優先級、Q-time、等待時間、recipe 等規則挑一顆上機。</p>`],
+  direct: ['🔀 機台直送 vs 先回儲位', `
+    <p>貨在機台做完後，有兩種走法：</p><ol>
+      <li><b>先回儲位</b>：機台 → STB → 下一台機台，共兩趟搬運。</li>
+      <li><b>機台直送</b>（tool-to-tool）：下一站有機台空著、而且可以收貨，就直接送過去，一趟搬運。</li></ol>
+    <h4>直送的好處</h4><ul>
+      <li>搬運次數變少，天車負擔和軌道擁擠降低。</li>
+      <li>這顆貨等待時間變短，對有 Q-time 的製程特別有幫助。</li>
+      <li>少一次取放，就少一次取放貨異常的機會。</li></ul>
+    <h4>很多廠還是先回儲位的原因</h4><ul>
+      <li><b>派工通常是機台挑貨</b>：一律直送，等比較久或更急的 Lot 可能被插隊。</li>
+      <li><b>空著不代表能收</b>：機台可能在換 recipe、等工程確認、準備 PM，或已經預約給別的貨。</li>
+      <li><b>Lot 本身可能還不能走</b>：要抽檢、被 Hold，或系統上還沒完成出站和下一站的進站。</li>
+      <li><b>會佔住下一台的 Load Port</b>：送過去不能馬上開始，就卡在 Port 上擋到別的貨。</li>
+      <li><b>車還沒到，機台可能被搶走</b>：所以直送一定要先預約下一台的 Port。</li></ul>
+    <h4>這個模擬</h4><p>目前是混合的：機台做完約 60% 直接送下一台、40% 回 STB，是隨機分配，不是看下一台有沒有空來決定。</p>`],
 };
 function openInfoCard(kind, onClose) {
   if (typeof openAlarm !== 'undefined' && openAlarm) closeAlarmCard();
@@ -237,3 +288,10 @@ function openInfoCard(kind, onClose) {
   c.style.display = 'block';
   $('acClose').onclick = () => { c.style.display = 'none'; if (onClose) onClose(); };
 }
+
+// 只變更下一次初始化的佔用率，不在運行途中憑空增減貨物。
+if (!$('stbFill').querySelector(`option[value="${STB_INITIAL_FILL}"]`)) {
+  const o = document.createElement('option'); o.value = STB_INITIAL_FILL; o.textContent = STB_INITIAL_FILL + '%'; $('stbFill').appendChild(o);
+}
+$('stbFill').value = String(STB_INITIAL_FILL);
+$('applyStbFill').onclick = () => { const url = new URL(location.href); url.searchParams.set('stbFill', $('stbFill').value); location.href = url.href; };

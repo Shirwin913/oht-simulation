@@ -233,7 +233,7 @@ function updateVehicle(v, dt) {
         waitByPri[v.job.pri][0] += simTime - v.job.created; waitByPri[v.job.pri][1]++; if (benchWaits) benchWaits.push(simTime - v.job.created); }
       else v.op = 'drop';
       const port = v.op === 'pick' ? v.job.from : v.job.to;
-      if (port.owner.type === 'machine') { v.state = 'e84'; v.timer = 0; v.e84Wait = 0; port.e84 = v; }   // 機台 Load Port：先做 E84 交握
+      if ((port.owner.type === 'machine' || port.owner.type === 'ntb')) { v.state = 'e84'; v.timer = 0; v.e84Wait = 0; port.e84 = v; }   // 機台 Load Port：先做 E84 交握
       else v.state = 'guardOpen';                                       // STB 是被動的儲格，不用交握
     }
   } else {
@@ -314,7 +314,7 @@ function stepTransfer(v, dt) {
       if (shiftMove(v, port.lat, dt)) v.state = 'lower';
       break;
     case 'lower':
-      if (pendingCurtain && port.owner.type === 'machine' && v.hoist < 0.05) { raiseCurtain(v); return; }   // 教學：下一台開始下降的車碰到光閘遮斷
+      if (pendingCurtain && (port.owner.type === 'machine' || port.owner.type === 'ntb') && v.hoist < 0.05) { raiseCurtain(v); return; }   // 教學：下一台開始下降的車碰到光閘遮斷
       if (hoistMove(v, hoistDepth(port), dt)) { v.state = v.op === 'pick' ? 'grip' : 'release'; v.timer = CLAW_TIME; }
       break;
     case 'grip':
@@ -332,14 +332,15 @@ function stepTransfer(v, dt) {
         const f = v.carry;
         f.carrier = null; placeFoupAt(f, port);
         port.foup = f; port.reserved = false; f.port = port; f.job = null; v.carry = null; v.claw = 0;
-        if (port.owner.type === 'stb') { f.state = 'buffered'; f.timer = STB_DWELL * (0.3 + rndD() * 0.7); }
-        else { f.state = 'processing'; f.timer = procTime * (0.7 + rndD() * 0.6); }
+        if (port.owner.type === 'ntb') { f.state = 'ntbOut'; delete f.outputKind; f.storageWaitingSince = null; }
+        else if (port.owner.type === 'stb') { f.state = 'buffered'; f.timer = STB_DWELL * (0.3 + rndD() * 0.7); }
+        else { f.state = 'processing'; delete f.outputKind; f.storageWaitingSince = null; f.timer = procTime * (0.7 + rndD() * 0.6); }
         log(`${v.id} 放貨 ${f.id} → ${port.name}`);
         v.state = 'raise';
       }
       break;
     case 'raise':
-      if (hoistMove(v, 0, dt)) v.state = Math.abs(v.shift) > 1e-4 ? 'shiftIn' : port.owner.type === 'machine' ? 'e84end' : 'guardClose';
+      if (hoistMove(v, 0, dt)) v.state = Math.abs(v.shift) > 1e-4 ? 'shiftIn' : (port.owner.type === 'machine' || port.owner.type === 'ntb') ? 'e84end' : 'guardClose';
       break;
     case 'shiftIn':
       if (shiftMove(v, 0, dt)) v.state = 'guardClose';
@@ -406,7 +407,7 @@ function stepPorts(dt) {
   for (const p of ports) {
     const f = p.foup; if (!f) continue;
     if (p.owner.down) continue;                                        // 機台當機：加工暫停
-    if (f.state === 'processing' || f.state === 'buffered') { f.timer -= dt; if (f.timer <= 0) f.state = 'ready'; }
+    if (f.state === 'processing' || f.state === 'buffered') { f.timer -= dt; if (f.timer <= 0) { if (f.state === 'processing') { delete f.outputKind; f.storageWaitingSince = null; } f.state = 'ready'; } }
   }
 }
 const pick = a => a[Math.floor(rndD() * a.length)];
@@ -425,28 +426,47 @@ function dispatch() {
   stepMaintQueue();                                          // 維修區空出來就叫下一台排隊的車過去
   // 這一輪的空位清單只算一次；被選走的就從清單拿掉
   const freeMachines = [], freeStbs = [];
-  for (const q of ports) if (!q.foup && !q.reserved && usable(q)) (q.owner.type === 'machine' ? freeMachines : freeStbs).push(q);
+  for (const q of ports) if (q.owner.type !== 'ntb' && !q.foup && !q.reserved && usable(q)) (q.owner.type === 'machine' ? freeMachines : freeStbs).push(q);
   const take = (list, q) => { list.splice(list.indexOf(q), 1); return q; };
   // 1. 產生搬運任務
   let created = 0;
-  for (const p of ports) {
-    if (created >= MAX_NEW_JOBS) break;
+  // 特急／急件先挑目的地（空機台、空儲位很少時，才不會被一般 Lot 搶光）
+  const jobOrder = ports.filter(p => p.foup && p.foup.pri > 0).sort((a, b) => b.foup.pri - a.foup.pri).concat(ports.filter(p => !(p.foup && p.foup.pri > 0)));
+  for (const p of jobOrder) {
+
     const f = p.foup;
     if (!f || f.state !== 'ready' || f.job || f.unreported || !usable(p)) continue;   // 還沒回報放好的 FOUP，MCS 不知道它在這
     let dest = null;
-    if (p.owner.type === 'stb') { const q = nearest(p, freeMachines); if (q) dest = take(freeMachines, q); }  // STB → 最近的空機台
+    if (f.empty && p.owner.type === 'stb') continue; // 空盒留在儲格，等人員下 NTB 出庫指令
+    if (p.owner.type === 'ntb' && p.ntbDirection !== 'in') continue;
+    if (p.owner.type === 'ntb') { const q = nearest(p, freeStbs); if (q) dest = q; }
+    else if (p.owner.type === 'stb') { const q = nearest(p, freeMachines); if (q) dest = q; }  // STB → 最近的空機台
     else {
-      // 機台 → 下一台機台（60%，隨機）或最近的空 STB 儲格（40%）；沒空位就改去另一種
+      // 每次加工結束只決定一次流向；指定回 STB 的貨滿位時不可改送機台。
       const c = freeMachines.filter(q => q.owner !== p.owner);
-      const toMachine = c.length && (rndD() < 0.6 || !freeStbs.length);
+      if (!f.outputKind) f.outputKind = rndD() < 0.6 ? 'machine' : 'stb';
+      const toMachine = f.outputKind === 'machine';
       // 下一台機台：從沿軌道最近的 NEXT_TOOL_POOL 台空機台裡隨機挑（全廠隨機的話，車會一直繞大半圈，主幹線塞爆）
       //   另外 CROSS_ZONE 的機率送到其他區塊的機台（會走區塊之間的連接線）
       const reach = c.filter(q => routeDist(p, q) < Infinity);           // 軌道封鎖時有些機台到不了
-      if (toMachine && reach.length) dest = take(freeMachines, rndD() < CROSS_ZONE ? pick(reach)
+      if (toMachine && reach.length) dest = (rndD() < CROSS_ZONE ? pick(reach)
         : pick(reach.map(q => [routeDist(p, q), q]).sort((a, b) => a[0] - b[0]).slice(0, NEXT_TOOL_POOL).map(x => x[1])));
-      else { const q = nearest(p, freeStbs); if (q) dest = take(freeStbs, q); }
+      else if (!toMachine) { const q = nearest(p, freeStbs); if (q) dest = q; }
     }
-    if (dest) {
+    if (p.owner.type === 'machine' && f.outputKind === 'stb' && !dest) {
+      if (f.storageWaitingSince == null) f.storageWaitingSince = simTime;
+      // 有空位但不可達／不可用時明確區分，避免把封軌也當成滿位。
+      const empty = ports.filter(q => q.owner.type === 'stb' && !q.foup && !q.reserved);
+      f.storageWaitReason = empty.length ? '空位不可達／不可用' : '儲位已滿或已預約';
+    }
+    if (dest && created < MAX_NEW_JOBS) {
+      if (f.storageWaitingSince != null) {
+        const waited = simTime - f.storageWaitingSince;
+        storageWaitSum += waited; storageWaitCount++;
+        log(`📦 ${f.id} 等儲位 ${Math.round(waited)} 秒，已預約 ${dest.name}`);
+        f.storageWaitingSince = null; f.storageWaitReason = null;
+      }
+      take(dest.owner.type === 'stb' ? freeStbs : freeMachines, dest);
       dest.reserved = true; created++;
       const job = { id: ++jobSeq, from: p, to: dest, foup: f, created: simTime, vehicle: null, pri: f.pri || 0 };
       f.job = job; jobs.push(job);
@@ -502,10 +522,17 @@ function autoAssign(idle, order) {
 
 // ---------- 插特急（教學用）：挑一個還沒派車的 Lot 改成特急 ----------
 function insertHotLot() {
-  const cand = ports.filter(p => p.foup && usable(p) && p.foup.pri < 2 && (!p.foup.job || !p.foup.job.vehicle) && ['ready', 'processing', 'buffered'].includes(p.foup.state));
+  const cand = ports.filter(p => p.foup && usable(p) && !p.foup.empty && p.foup.pri < 2 && (!p.foup.job || !p.foup.job.vehicle) && ['ready', 'processing', 'buffered'].includes(p.foup.state));
   if (!cand.length) { log('目前找不到可以插特急的 Lot'); return null; }
-  // 優先挑已經在等搬運的；沒有的話挑快加工完的
-  const f = (cand.find(p => p.foup.state === 'ready') || cand.sort((a, b) => a.foup.timer - b.foup.timer)[0]).foup;
+  // 挑「現在就走得動」的：已有任務只差派車 → 等搬運而且目的地有空位 → 快加工完的
+  //   （儲位、機台都很滿時，隨便挑一個可能等很久都沒有目的地）
+  const freeM = ports.some(q => q.owner.type === 'machine' && !q.foup && !q.reserved && usable(q));
+  const freeS = ports.some(q => q.owner.type === 'stb' && !q.foup && !q.reserved && usable(q));
+  const canGo = p => p.owner.type === 'stb' ? freeM : p.owner.type === 'ntb' ? freeS : (p.foup.outputKind === 'machine' ? freeM : p.foup.outputKind === 'stb' ? freeS : freeM || freeS);
+  const proc = cand.filter(p => p.owner.type === 'machine' && p.foup.state === 'processing').sort((a, b) => a.foup.timer - b.foup.timer);
+  const pickP = cand.find(p => p.foup.job && !p.foup.job.vehicle) || cand.find(p => p.foup.state === 'ready' && canGo(p))
+    || proc.find(canGo) || cand.find(p => p.foup.state === 'ready') || proc[0] || cand[0];
+  const f = pickP.foup;
   f.pri = 2; setFoupTag(f); if (f.job) f.job.pri = 2;
   if (f.state !== 'ready') f.timer = Math.min(f.timer, 5);
   log(`🔥 插特急：${f.id}（在 ${f.port.name}），派車時排第一、匯流點路權最大`);

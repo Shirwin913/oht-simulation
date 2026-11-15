@@ -101,7 +101,7 @@ const E204_INFO = { code: 'E-204', title: '取放貨中斷：HO_AVBL OFF（光�
   steps: ['確認光閘區域淨空（沒有人員、物品擋住）', '到機台端排除異常、讓 HO_AVBL 恢復 ON', '天車操作介面：警報清除 → 捲揚原點 → 側移原點 → 切自動', '天車會重新做一次 E84 交握再取放貨'] };
 let pendingCurtain = false;
 const transferPort = v => v.job ? (v.op === 'pick' ? v.job.from : v.job.to) : null;
-const hoAvbl = p => !!p && p.owner.type === 'machine' && !p.owner.down && !(p.curtain > simTime);   // 機台給的 HO_AVBL
+const hoAvbl = p => !!p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && !p.owner.down && !(p.curtain > simTime) && (p.owner.type !== 'ntb' || p.gate <= 0.001);   // 機台給的 HO_AVBL
 // 光閘遮斷：stepTransfer 在天車開始下降時呼叫（pendingCurtain），或手動觸發時直接找正在取放的車
 function raiseCurtain(v, opts = {}) {
   if (!v) {

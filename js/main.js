@@ -17,6 +17,7 @@ function updateVisuals(t) {
     else if (!f) setLed(p.ledMat, C.off, 0);
     else if (f.state === 'processing') setLed(p.ledMat, C.green, 1.1);
     else if (f.state === 'ready') setLed(p.ledMat, C.amber, 1.4 * pulse);
+    else if (f.state === 'ntbOut') setLed(p.ledMat, C.amber, 1.4 * pulse);
     else if (f.state === 'buffered') setLed(p.ledMat, C.purple, 1.2);
     else setLed(p.ledMat, C.off, 0);
   }
@@ -82,7 +83,7 @@ function loop() {
   if (!paused) {
     const sd = dt * speed, n = Math.max(1, Math.ceil(sd / 0.04)), h = sd / n;
     for (let i = 0; i < n; i++) {
-      simTime += h; stepPorts(h); stepVehicles(h); commTick(h); hmiTick(h);
+      simTime += h; stepPorts(h); ntbTick(h); stepVehicles(h); commTick(h); hmiTick(h);
       dispT += h; if (dispT >= 0.5) { dispT = 0; dispatch(); }
     }
   }

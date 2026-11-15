@@ -47,3 +47,8 @@ const REPAIR_TIME = 120;    // 故障維修平均秒數（模擬用，已縮短�
 const PM_TIME = 75;         // 定期保養平均秒數
 const liftEase = l => l * l * (3 - 2 * l);                         // 起步、到底都慢慢的
 const liftY = l => H - liftEase(l) * (H - LIFT_LOW);
+
+// 開場 STB 佔用率；網址可用 ?stbFill=40 切回低負載。
+const requestedStbFill = Number(new URLSearchParams(location.search).get('stbFill') ?? 98);
+const STB_INITIAL_FILL = Number.isFinite(requestedStbFill) ? Math.max(0, Math.min(100, requestedStbFill)) : 98;
+let storageWaitSum = 0, storageWaitCount = 0;

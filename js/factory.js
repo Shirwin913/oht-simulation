@@ -36,7 +36,7 @@ function addPort(seg, d, lat, top, owner, name, doorSide, ledMat) {
   const f = frameAt(seg, d);
   const p = { id: ports.length, name, seg, d, lat, top, owner, foup: null, reserved: false, ledMat,
     x: f.x + lat * f.nx, z: f.z + lat * f.nz, rot: facing(f, doorSide) };
-  if (owner.type === 'machine') { p.lcLeds = pendingLc; pendingLc = null; }
+  if (owner.type === 'machine' || owner.type === 'ntb') { p.lcLeds = pendingLc; pendingLc = null; }
   ports.push(p); owner.ports.push(p); return p;
 }
 const LC_Z = 0.46;                                   // 光閘在 Load Port 靠走道那一側（區域座標 z）
@@ -76,6 +76,48 @@ function makeMachine(seg, dc, name) {
   g.updateMatrixWorld(true); lb.userData.wp = lb.getWorldPosition(new THREE.Vector3()); machineLabels.push(lb);
   [-0.95, 0.95].forEach((lx, i) => addPort(seg, dc + lx, 0, PORT_TOP, m, `${name}-P${i + 1}`, side, portMesh(g, lx, -side)));
   machines.push(m);
+}
+
+// ---------- NTB：地面人員投取貨站，一區一站、每站兩個 Port ----------
+const ntbs = [], ntbZones = new Set();
+function makeNtb(seg, dc, zone) {
+  const stationNo = ntbs.length + 1, name = `NTB${String(stationNo).padStart(2,'0')}`, owner = {type:'ntb', name, ports:[], zone}, g = groupAt(seg, dc);
+  owner.x = g.position.x; owner.z = g.position.z;
+  // NTB 直接安裝於原地板；無獨立操作台、無黃色地板或大型背板。
+  [-.95,.95].forEach((lx,i) => {
+    const moduleId = `M${String((stationNo-1)*2+i+1).padStart(2,'0')}`;
+    const p = addPort(seg, dc+lx, 0, PORT_TOP, owner, `${name}-${moduleId}`, -1, portMesh(g,lx,1));
+    p.moduleId = moduleId; p.ntbDirection = i === 0 ? 'in' : 'out';
+    const tag = makeLabel(`${moduleId} ${i === 0 ? '投貨' : '取貨'}`, {scale:.55}); tag.position.set(lx,2.05,.5); g.add(tag); labels.push(tag);
+  });
+  const lb = makeLabel(name + ' 投取貨站', {scale:1.0}); lb.position.set(0,2.65,-1.1); g.add(lb); labels.push(lb);
+  // 壓克力罩由 NTB 台面與光閘柱延伸；頂部保留天車吊掛通道。
+  const acrylic = new THREE.MeshStandardMaterial({color:0xbceafa, transparent:true, opacity:.22, roughness:.18, metalness:0, depthWrite:false, side:THREE.DoubleSide});
+  const metal = mat(0xa8b4bf, {metalness:.6, roughness:.35});
+  const piece = (w,h,d,x,y,z,material=metal,parent=g) => { const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material); mesh.position.set(x,y,z); parent.add(mesh); return mesh; };
+  owner.ports.forEach((p,i) => {
+    const lx = i ? .95 : -.95;
+    [-.42,.42].forEach(x => { piece(.025,.8,.92,lx+x,1.45,0,acrylic); piece(.035,.82,.035,lx+x,1.45,-LC_Z); piece(.035,.035,.94,lx+x,1.87,0); });
+    piece(.84,.8,.025,lx,1.45,-LC_Z,acrylic);
+    piece(.86,.035,.035,lx,1.87,-LC_Z);
+    // 氣缸在台體內，窗片向下收入 NTB，並由台體前板遮住。
+    piece(.91,.98,.055,lx,.51,LC_Z+.06,mat(0x8996a3));
+    piece(.06,.65,.06,lx+.37,.52,LC_Z-.05);
+    const door = new THREE.Group(); door.position.set(lx,0,LC_Z); g.add(door);
+    piece(.79,.78,.025,0,1.45,0,acrylic,door);
+    piece(.81,.035,.04,0,1.84,0,metal,door);
+    p.gate = 0; p.gateAccess = false; p.gateMesh = door;
+  });
+  // 鐵架：兩層、每層兩格，放在投取貨站外側的人員區。
+  owner.rack = [];
+  [-1.45,1.45].forEach(x => [-3.85,-2.95].forEach(z => piece(.06,2.55,.06,x,1.275,z)));
+  [.65,1.65,2.55].forEach(y => piece(3,.06,1.0,0,y,-3.4));
+  const frame = frameAt(seg,dc);
+  [.68,1.68].forEach(top => [-.76,.76].forEach(x => {
+    owner.rack.push({name:`${name}-R${owner.rack.length+1}`, top, x:frame.x+x*frame.tx-3.4*frame.nx, z:frame.z+x*frame.tz-3.4*frame.nz, rot:owner.ports[0].rot, foup:null});
+  }));
+  const rackLabel = makeLabel(name + ' FOUP 鐵架', {scale:.8}); rackLabel.position.set(0,2.95,-3.4);g.add(rackLabel);labels.push(rackLabel);
+  ntbs.push(owner);
 }
 
 // ---------- STB 儲格（吊在天花板、軌道內側，天車要側移 STB_OFFSET 才拿得到）----------
@@ -127,7 +169,7 @@ bays.forEach(b => {
   const laneStarts = [qa, qa + laneLen + uLen];                           // 兩條車道在 Bay 軌道上的起點
   let k = 0;
   laneStarts.forEach((d0, li) => {
-    [2.6, 7.6, 12.6, 17.6, 22.6].forEach(off => { if (off + 2.5 < laneLen) makeMachine(b.seg, d0 + off, `${BAY_PROCESS[b.name]}-${b.name}${++k}`); });
+    [2.6, 7.6, 12.6, 17.6, 22.6].forEach(off => { if (off + 2.5 < laneLen) { const zone = b.zone.name; if (!ntbZones.has(zone)) { ntbZones.add(zone); makeNtb(b.seg, d0 + off, zone); } else makeMachine(b.seg, d0 + off, `${BAY_PROCESS[b.name]}-${b.name}${++k}`); } });
     stbRow(b.seg, d0 + STB_CLEAR, d0 + laneLen - STB_CLEAR, `STB-${b.name}${li ? 'R' : 'L'}`);
   });
 });
