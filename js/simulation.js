@@ -8,7 +8,7 @@ const STATE_TXT = {
   e84: 'E84 交握', e84end: 'E84 完成通知',
   toMaint: '前往維修區', maintLower: '捲揚機下降', repair: '地面維修中', maintRaise: '捲揚機上升',
 };
-const stateText = v => (v.noComm ? '通訊中斷｜' : '') + (v.offline ? '下線｜' : '') + (v.state === 'e84' || v.state === 'e84end' ? e84Text(v) : v.state === 'idle' && v.parked ? '軌道上休息' : v.state === 'idle' && v.pushT > 0 ? `被 ${v.pushedBy || '後車'} 推著前進` :
+const stateText = v => (v.pushed ? '人員推車中｜' : '') + (v.noComm ? '通訊中斷｜' : '') + (v.offline ? '下線｜' : '') + (v.state === 'e84' || v.state === 'e84end' ? e84Text(v) : v.state === 'idle' && v.parked ? '軌道上休息' : v.state === 'idle' && v.pushT > 0 ? `被 ${v.pushedBy || '後車'} 推著前進` :
   (v.op && !['idle', 'toPick', 'toDrop', 'toMaint'].includes(v.state) ? (v.op === 'pick' ? '取｜' : '放｜') : '') + STATE_TXT[v.state]);
 function fmt(t) { t = Math.floor(t); const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60; return [h, m, s].map(n => String(n).padStart(2, '0')).join(':'); }
 function log(msg) { logs.unshift([fmt(simTime), msg]); if (logs.length > 40) logs.pop(); }
@@ -53,6 +53,49 @@ segs.forEach(sg => {
 function parkSpot(seg, dMin, dMax) {
   for (const [a, b] of seg.park) { const d = Math.max(a, dMin); if (d <= b && d <= dMax) return d; }
   return null;
+}
+
+// ---------- 山形上下手（導引輪換手）----------
+//   天車在分岔點要轉進支線（轉彎）時切「下手」，直行時切「上手」；前、後走行輪在彎道裡時不能換手。
+//   要在分岔點前 HAND_LOOK 公尺內換好，來不及就停在分岔點前等。換手偶爾會失敗（E-105，開「隨機自動發生」時才會隨機出現）。
+const PUSH_V = 0.35;
+const HAND_LOOK = 10, HAND_TIME = 0.6, BOGIE_X = 0.42, HAND_FAIL_P = 0.0003;
+let pendingHandFail = false, handSwitches = 0;
+const handName = h => h === 'down' ? '下手' : '上手';
+function nextDiverge(v, pa) {
+  for (const e of pa) if (e.off > 0 && e.seg.from.out.length > 1) return { node: e.seg.from, off: e.off, need: e.seg === e.seg.from.def ? 'up' : 'down' };
+  return null;
+}
+// 前、後走行輪是不是在彎道裡
+function bogieInCurve(v, pa) {
+  const [fs, fd] = locAlong(v, BOGIE_X, pa || pathAhead(v, BOGIE_X + 0.2)), [rs, rd] = locAlong(v, -BOGIE_X);
+  return [fs.curveAt(fd), rs.curveAt(rd)];
+}
+// 前手、後手各自有上手／下手：v.hf（前）、v.hr（後）；v.hand＝兩手一致時的狀態，不一致是 'mixed'
+function handInit(v) { if (!v.hf) { v.hf = v.hr = v.hand && v.hand !== 'mixed' ? v.hand : 'up'; v.hand = v.hf; } }
+function handTick(v, dt) {
+  handInit(v); const s = v.handSw; if (!s) return;
+  s.t -= dt; if (s.t > 0) return;
+  if (s.which !== 'r') v.hf = s.to; if (s.which !== 'f') v.hr = s.to;
+  v.hand = v.hf === v.hr ? v.hf : 'mixed'; v.handSw = null;
+}
+const handsAre = (v, h) => (handInit(v), v.hf === h && v.hr === h);
+function handCheck(v, pa, dt) {
+  handTick(v, dt);
+  const nd = nextDiverge(v, pa);
+  if (!nd || nd.off > HAND_LOOK) { v.handNeed = null; return Infinity; }
+  v.handNeed = nd.need;
+  if (handsAre(v, nd.need) && !v.handSw) return Infinity;
+  if (!v.handSw) {
+    const [fc, rc] = bogieInCurve(v, pa);
+    v.handWait = v.v < 0.05 ? (v.handWait || 0) + dt : 0;
+    if (!(fc || rc) || v.handWait > 2) {                              // 走行輪不在彎道裡才換（停太久就直接換，避免卡死）
+      v.handWait = 0;
+      if (pendingHandFail || (autoAlarm && rndA() < HAND_FAIL_P)) { const auto = !pendingHandFail; pendingHandFail = false; raiseHandFail(v, nd.need, auto ? { auto: true } : {}); return 0; }
+      v.handSw = { to: nd.need, t: HAND_TIME, which: 'both' }; handSwitches++;
+    }
+  }
+  return nd.off - 0.8;
 }
 
 // ---------- 優先級與路權 ----------
@@ -139,7 +182,9 @@ function curveLimit(v, vTop, pa) {
 
 function updateVehicle(v, dt) {
   if (v.fault || v.manual || v.estop) { v.v = 0; v.yielding = false; v.waitT = 0; return; }   // 異常中、手動模式：停在原地等人處理（alarms.js、hmi.js）
-  if (pendingTransferFault && (v.state === 'grip' || v.state === 'release')) { raiseTransferFault(v); return; }
+  if (pendingTransferFault && !pendingTransferFault.nearPort && (pendingTransferFault.clawUnknown ? v.state === 'release' && v.carry : v.state === 'grip' || v.state === 'release')) { raiseTransferFault(v); return; }
+  if (pendingTransferFault && pendingTransferFault.nearPort && v.state === 'lower' && v.carry) {   // 教學：在機台放貨、捲揚快到底時停住
+    const p = v.job && v.job.to; if (p && p.owner.type === 'machine' && hoistDepth(p) - v.hoist < 0.06) { raiseTransferFault(v); return; } }
   const st = v.state;
   if (st === 'idle' || st === 'toPick' || st === 'toDrop' || st === 'toMaint') {
     if (st === 'idle') {
@@ -152,7 +197,7 @@ function updateVehicle(v, dt) {
     } else v.parked = false;
     const pa = pathAhead(v, LOOK);
     v.yielding = false;
-    const { gap, leadV, lead } = leaderInfo(v, pa);
+    let { gap, leadV, lead } = leaderInfo(v, pa);
     v.gapAhead = gap;                                                    // 給狀態燈用：前方有東西停車＝紫燈閃
     // 推車：前面擋路的是休息（或正要停下來休息）的空車，而且自己要開過它的位置 → 叫它往前開
     if (lead && lead.state === 'idle' && !lead.fault && (lead.parked || lead.target) && gap < PUSH_GAP && distToTarget(v) > gap + 0.5) {
@@ -165,7 +210,10 @@ function updateVehicle(v, dt) {
       const pd = parkSpot(v.seg, v.d + brake, gap < Infinity ? v.d + gap - MIN_GAP - 0.1 : Infinity);
       if (pd !== null) { v.target = { seg: v.seg, d: pd }; v.route = []; }
     }
-    const vTop = st === 'idle' ? VMAX * 0.7 : VMAX;
+    const hg = handCheck(v, pa, dt);                                   // 山形上下手：分岔點前還沒換好手就停在分岔點前
+    if (v.fault) return;
+    if (hg < gap) { gap = hg; leadV = 0; }
+    const vTop = v.pushed ? PUSH_V : st === 'idle' ? VMAX * 0.7 : VMAX;          // 推車：人員慢慢推
     let lim = curveLimit(v, vTop, pa);
     if (gap < Infinity) { const free = gap - MIN_GAP; lim = Math.min(lim, free > 0 ? Math.sqrt(leadV * leadV + 2 * A * free) : 0); }
     const dT = distToTarget(v);
@@ -212,11 +260,11 @@ function shiftMove(v, target, dt) {
 
 // ---------- E84 交握（天車 ↔ 機台 Load Port 的訊號確認，SEMI E84）----------
 const E84_TIME = 1.6, E84_END_TIME = 0.8, E84_TIMEOUT = 15;
-const E84_STEPS = { drop: ['CS_0＋VALID', '等 L_REQ（機台：可以放）', 'TR_REQ', '等 READY'], pick: ['CS_0＋VALID', '等 U_REQ（機台：可以取）', 'TR_REQ', '等 READY'] };
+const E84_STEPS = { drop: ['HO_AVBL ON → CS_0＋VALID', '等 L_REQ（機台：可以放）', 'TR_REQ', '等 READY'], pick: ['HO_AVBL ON → CS_0＋VALID', '等 U_REQ（機台：可以取）', 'TR_REQ', '等 READY'] };
 function e84Text(v) {
   if (v.state === 'e84end') return (v.op === 'pick' ? '取｜' : '放｜') + 'E84：BUSY 關 → COMPT（完成）';
   const port = v.op === 'pick' ? v.job.from : v.job.to;
-  if (port.owner.down) return `${v.op === 'pick' ? '取' : '放'}｜E84：機台沒回應，等待中 ${Math.ceil(E84_TIMEOUT - v.e84Wait)}s 後逾時`;
+  if (!hoAvbl(port)) return `${v.op === 'pick' ? '取' : '放'}｜E84：HO_AVBL OFF（${port.owner.down ? '機台異常' : '光閘被擋'}），等待中 ${Math.ceil(E84_TIMEOUT - v.e84Wait)}s 後逾時`;
   const st = E84_STEPS[v.op], i = Math.min(st.length - 1, Math.floor(v.timer / E84_TIME * st.length));
   return `${v.op === 'pick' ? '取' : '放'}｜E84：${st[i]}`;
 }
@@ -244,7 +292,7 @@ function stepTransfer(v, dt) {
   switch (v.state) {
     case 'e84': {
       // 天車 → 機台：CS_0、VALID；機台 → 天車：L_REQ（可以放）或 U_REQ（可以取）；天車：TR_REQ；機台：READY
-      if (port.owner.down) {                                          // 機台沒回應：等到逾時就放棄
+      if (!hoAvbl(port)) {                                            // 機台的 HO_AVBL 是 OFF（機台異常、光閘被擋）：等到逾時就放棄
         v.e84Wait += dt;
         if (v.e84Wait > E84_TIMEOUT) e84Abort(v, port);
         break;
@@ -266,6 +314,7 @@ function stepTransfer(v, dt) {
       if (shiftMove(v, port.lat, dt)) v.state = 'lower';
       break;
     case 'lower':
+      if (pendingCurtain && port.owner.type === 'machine' && v.hoist < 0.05) { raiseCurtain(v); return; }   // 教學：下一台開始下降的車碰到光閘遮斷
       if (hoistMove(v, hoistDepth(port), dt)) { v.state = v.op === 'pick' ? 'grip' : 'release'; v.timer = CLAW_TIME; }
       break;
     case 'grip':

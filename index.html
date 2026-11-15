@@ -62,7 +62,7 @@
     <div class="alarmBtns">
       <button data-alarm="vehicle">天車故障停車</button><button data-alarm="transfer">取放貨異常</button>
       <button data-alarm="machine">機台當機</button><button data-alarm="track">軌道區段封鎖</button>
-      <button data-alarm="ap">無線 AP 斷線</button><button data-alarm="host">派車系統當機</button>
+      <button data-alarm="ap">無線 AP 斷線</button><button data-alarm="host">派車系統當機</button><button data-alarm="curtain">光閘遮斷（E84 中斷）</button><button data-alarm="hand">換手失敗</button><button data-alarm="claw">夾爪狀態不明</button><button data-alarm="near">貨離機台很近時停住</button><button data-alarm="norec">無法復歸（要推車）</button>
     </div>
     <div class="row"><label style="flex:auto;display:flex;align-items:center;gap:6px"><input type="checkbox" id="autoAlarm">隨機自動發生（約每 2～4 分鐘，會自動復歸）</label></div>
     <div class="sec">目前的異常（點一筆看說明）</div>
@@ -76,13 +76,16 @@
     <div class="card commBox"><div class="ch">📶 通訊與派車</div>
       <div class="row"><label>通訊方式</label><select id="commMode" style="flex:1"><option value="ap">固定 AP＋漫遊</option><option value="mesh">天車 Mesh 網狀網路</option></select></div>
       <div class="row"><label>派車方式</label><select id="dispMode" style="flex:1"><option value="central">中央派車（MCS 指定）</option><option value="auto">天車自主接任務（競標）</option></select></div>
+      <div class="row"><label>AP 連線上限</label><input type="range" id="apCap" min="3" max="30" step="1" value="6"><span class="val" id="apCapVal">6 台</span></div>
+      <div class="row"><label>閘道器上限</label><input type="range" id="gwCap" min="4" max="40" step="1" value="14"><span class="val" id="gwCapVal">14 台</span></div>
+      <div class="row"><label>每車轉送上限</label><input type="range" id="relayCap" min="1" max="30" step="1" value="10"><span class="val" id="relayCapVal">10 台</span></div>
       <div class="row"><label style="flex:auto;display:flex;align-items:center;gap:6px"><input type="checkbox" id="showComm">顯示無線網路（範圍、天車連線）</label></div>
       <div id="commInfo" class="mut"></div></div>
     <div class="card benchBox"><div class="ch">📊 比較實驗</div>
       <div class="mut" style="margin-bottom:6px">用同一組亂數，把下面勾的組合各跑一次（背景快轉、不畫畫面），最後出一張比較表。</div>
       <div class="row"><label>情境</label><select id="bScen" style="flex:1">
         <option value="normal">正常運作</option><option value="fewer">天車較少（36 台）</option><option value="peak">任務尖峰</option>
-        <option value="host">派車系統當機 5 分鐘</option><option value="apstorm">AP／閘道器連續斷線</option></select></div>
+        <option value="host">派車系統當機 5 分鐘</option><option value="apstorm">AP／閘道器連續斷線</option><option value="jam">天車故障擋路</option></select></div>
       <div id="bScenDesc" class="mut" style="font-size:11.5px;margin:-2px 0 4px 82px"></div>
       <div class="row"><label>每種跑</label><select id="bHours" style="flex:1"><option value="0.5">30 分鐘（快）</option><option value="1" selected>1 小時</option><option value="2">2 小時</option></select></div>
       <div class="row"><label>亂數種子</label><input id="bSeed" type="number" style="flex:1;min-width:0"></div>
@@ -124,6 +127,11 @@
       <span><i class="dot" style="background:#22d3ee"></i>E84 交握中</span>
       <span><i class="dot" style="background:#4b5563"></i>空 Port</span>
       <span><i class="dot" style="background:#ef4444"></i>異常（閃爍）</span>
+    </div>
+    <div class="sec">光閘（機台 Load Port 走道側的兩根柱子）</div>
+    <div class="legend">
+      <span><i class="dot" style="background:#22c55e"></i>燈條綠＝正常（HO_AVBL ON）</span>
+      <span><i class="dot" style="background:#ef4444;animation:hblink .5s infinite"></i>燈條紅＝被遮斷（取放貨會中斷）</span>
     </div>
     <div class="sec">其他</div>
     <div class="legend"><span><i class="dot" style="background:#d9dde1"></i>車底淺灰小板＝防墜板</span><span>左上角「🎓 導覽」有一步一步的示範</span></div>

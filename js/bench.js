@@ -11,6 +11,7 @@ const BENCH_SCENARIOS = {
   peak: { name: '任務尖峰', desc: '加工時間縮短成 600 秒：搬運需求大增' },
   host: { name: '派車系統當機', desc: '每小時第 20 分鐘起，派車控制系統（OCS）當機 5 分鐘' },
   apstorm: { name: 'AP／閘道器連續斷線', desc: '每 10 分鐘有 2 台 AP（Mesh 模式是閘道器）斷線 5 分鐘' },
+  jam: { name: '天車故障擋路', desc: '每 20 分鐘有一台在主幹線上行駛的車故障（自動復歸失敗），擋路 10 分鐘，後面塞車' },
 };
 const BENCH_COMBOS = [['ap', 'central', '固定 AP＋中央派車'], ['ap', 'auto', '固定 AP＋自主接任務'], ['mesh', 'central', 'Mesh＋中央派車'], ['mesh', 'auto', 'Mesh＋自主接任務']];
 
@@ -32,9 +33,13 @@ function benchRun() {
     dispT += dt; if (dispT >= 0.5) { dispT = 0; dispatch(); }
     // 情境事件
     if (P.scen === 'host') { const m = simTime % 3600; if (m >= 1200 && m < 1200 + dt && !hostDown) { const a = raiseHostDown(null, {}); if (a) a.autoClearAt = simTime + 300; } }
+    if (P.scen === 'jam' && simTime % 1200 < dt && simTime > 1) {
+      const v = vehicles.filter(u => !u.fault && u.seg.kind === 'main' && u.v > 1).sort((a, b) => rndA() - 0.5)[0];
+      if (v) { const a = raiseAlarm('vehicle', ALARM_INFO.vehicle[0], v, `天車 ${v.id}（${v.seg.name}）`, { autoFail: true }); v.fault = a; a.autoClearAt = simTime + 600; }
+    }
     if (P.scen === 'apstorm' && simTime % 600 < dt) for (let k = 0; k < 2; k++) { const a = raiseApDown(null, {}); if (a) a.autoClearAt = simTime + 300; }
     if (!measuring && simTime >= BENCH_WARMUP) {
-      measuring = true; c0 = completed; w0 = waitByPri.map(x => [...x]); cyc0 = cycleByPri.map(x => [...x]); benchWaits = []; benchLost = 0;
+      measuring = true; c0 = completed; M.full0 = apFullCount; w0 = waitByPri.map(x => [...x]); cyc0 = cycleByPri.map(x => [...x]); benchWaits = []; benchLost = 0;
     }
     if (measuring) {
       for (const v of vehicles) { if (v.noComm) M.lostSec += dt; if (v.fault) M.faultSec += dt; }
@@ -55,7 +60,7 @@ function benchRun() {
       p95: ws.length ? ws[Math.floor(ws.length * 0.95)] : 0, maxWait: ws.length ? ws[ws.length - 1] : 0,
       cycle: sum(cycleByPri, cyc0) / Math.max(1, cnt(cycleByPri, cyc0)), backlog: jobs.filter(j => !j.vehicle).length,
       lostEvents: benchLost, lostMin: M.lostSec / 60, faultMin: M.faultSec / 60, hostMin: M.hostSec / 60, alarms: M.alarms,
-      vehicles: vehicles.length,
+      vehicles: vehicles.length, fullLost: apFullCount - M.full0,
     } });
   }
   post({ progress: 0 }); setTimeout(chunk, 0);
@@ -120,7 +125,7 @@ function benchShow(S) {
     ['每小時搬運量', r => r.tph, f0, true], ['平均等車（秒）', r => r.wait, f0, false], ['95% 的任務等車在幾秒內', r => r.p95, f0, false],
     ['最久等車（秒）', r => r.maxWait, f0, false], ['一般 Lot 等車', r => r.waitPri[0], f0, false], ['急件等車', r => r.waitPri[1], f0, false],
     ['特急等車', r => r.waitPri[2], f0, false], ['平均搬運週期（秒）', r => r.cycle, f0, false], ['結束時還沒派車的任務', r => r.backlog, f0, false],
-    ['通訊中斷（次）', r => r.lostEvents, f0, false], ['通訊中斷（車·分鐘）', r => r.lostMin, f1, false], ['異常停車（車·分鐘）', r => r.faultMin, f1, false],
+    ['通訊中斷（次）', r => r.lostEvents, f0, false], ['其中因容量滿了（次）', r => r.fullLost, f0, false], ['通訊中斷（車·分鐘）', r => r.lostMin, f1, false], ['異常停車（車·分鐘）', r => r.faultMin, f1, false],
     ['異常發生（件）', r => Object.values(r.alarms).reduce((a, b) => a + b, 0), f0, false],
   ];
   const sc = BENCH_SCENARIOS[S.opt.scen];

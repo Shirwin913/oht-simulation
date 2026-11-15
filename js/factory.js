@@ -12,9 +12,12 @@ const staticBatch = makeBatch();                  // 機台本體、Load Port、
 const screenBatch = makeBatch();                  // 機台螢幕（會發光）
 const portLeds = makeLedBank(new THREE.BoxGeometry(0.6, 0.08, 0.05));
 const stbLeds = makeLedBank(new THREE.BoxGeometry(0.5, 0.05, 0.03));
+const lcLeds = makeLedBank(new THREE.BoxGeometry(0.014, 0.66, 0.022));   // 光閘柱上的指示燈條：綠＝正常、紅＝被遮斷
+let pendingLc = null;
 const G = {
   box: (w, h, d) => new THREE.BoxGeometry(w, h, d),
   pin: new THREE.CylinderGeometry(0.03, 0.04, 0.05, 8),
+  lcPost: new THREE.BoxGeometry(0.035, 0.8, 0.035), lcCap: new THREE.BoxGeometry(0.05, 0.05, 0.05),   // 光閘（Light Curtain）柱
   rod: new THREE.CylinderGeometry(0.025, 0.025, 10.5 - STB_TOP, 6),
   lamp: new THREE.CylinderGeometry(0.14, 0.14, 0.22, 12),
 };
@@ -33,13 +36,20 @@ function addPort(seg, d, lat, top, owner, name, doorSide, ledMat) {
   const f = frameAt(seg, d);
   const p = { id: ports.length, name, seg, d, lat, top, owner, foup: null, reserved: false, ledMat,
     x: f.x + lat * f.nx, z: f.z + lat * f.nz, rot: facing(f, doorSide) };
+  if (owner.type === 'machine') { p.lcLeds = pendingLc; pendingLc = null; }
   ports.push(p); owner.ports.push(p); return p;
 }
+const LC_Z = 0.46;                                   // 光閘在 Load Port 靠走道那一側（區域座標 z）
 // Load Port 外觀（群組 g 的區域座標，x 沿軌道、z 側向）
 function portMesh(g, lx, ledSide) {
   staticBatch.add(G.portBase, 0x7d8894, g, lx, 0.5, 0);
   staticBatch.add(G.portPlate, 0x2a3138, g, lx, 1.0, 0);
   [[0.25, 0], [-0.15, 0.22], [-0.15, -0.22]].forEach(([px, pz]) => staticBatch.add(G.pin, 0xc9ced4, g, lx + px, 1.04, pz));
+  // 光閘：Load Port 靠走道那一側的兩根柱子（發射器／接收器），中間有看不見的光束；有東西擋到就會讓 E84 的 HO_AVBL 掉下來
+  pendingLc = [-1, 1].map(k => {
+    staticBatch.add(G.lcPost, 0x2b3036, g, lx + k * 0.42, 1.45, LC_Z); staticBatch.add(G.lcCap, 0xf59e0b, g, lx + k * 0.42, 1.87, LC_Z);
+    return lcLeds.add(g, lx + k * 0.42, 1.45, LC_Z + 0.022);                  // 燈條貼在柱子朝走道那一面
+  });
   return portLeds.add(g, lx, 0.82, ledSide * 0.49);
 }
 // 在軌道 seg 的 d 處建一個群組，區域座標：x 沿行進方向、z 為天車左手邊
@@ -138,4 +148,4 @@ mainSegs.forEach((sg, i) => {
 // ---------- 把合併好的靜態物件放進場景 ----------
 staticBatch.build(vcMat({ metalness: 0.3, roughness: 0.55 }));
 screenBatch.build(vcMat({ color: 0x0b1a26, emissive: 0x1d6fa5, emissiveIntensity: 0.6 }), false);
-portLeds.build(); stbLeds.build(); lampBank.build();
+portLeds.build(); stbLeds.build(); lampBank.build(); lcLeds.build();

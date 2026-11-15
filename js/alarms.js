@@ -73,6 +73,68 @@ ALARM_INFO.host = [{ code: 'S-601', title: '派車控制系統（OCS）當機',
   impact: '「中央派車」模式：完全停止派車，空車停著等、待搬運的 FOUP 越積越多，恢復後要一段時間才消化得完。「天車自主接任務」模式：天車互相協調、自己接任務，影響很小。已經在搬的貨都會照常送完。',
   steps: ['通知系統人員確認 OCS 伺服器和程式狀態', '必要時切換備援主機', '恢復後觀察待派車任務是否慢慢消化'] }];
 const ALARM_TYPE_NAME = { vehicle: '天車故障停車', transfer: '取放貨異常', machine: '機台／Load Port 當機', track: '軌道區段封鎖', ap: '無線 AP 斷線', host: '派車系統當機' };
+// ---------- 換手失敗（山形上下手）----------
+const E105_INFO = { code: 'E-105', title: '換手失敗（山形上下手）',
+  what: '天車在分岔點前要切換導引輪（轉彎切下手、直行切上手），但換手動作沒有完成（機構卡住、感測器沒偵測到到位）。',
+  impact: '天車停在分岔點前，後面的車排隊。前、後走行輪在彎道內時不能換手、不能歸原點、也不能切上線。',
+  steps: ['確認天車不在彎道內（操作介面會顯示前車／後車有沒有入彎）', '警報清除（天車切手動）', '手動切換到需要的手（上手／下手）', '歸原點 → 原點成功後切上線'] };
+function raiseHandFail(v, need, opts) {
+  if (!v) { pendingHandFail = true; log('下一台要在分岔點換手的天車，換手會失敗'); return null; }
+  handInit(v);
+  const side = rndA() < 0.5 ? 'f' : 'r';                              // 其中一手沒切到位：另一手已經換好
+  if (side === 'f') v.hr = need; else v.hf = need; v.hand = v.hf === v.hr ? v.hf : 'mixed';
+  const a = raiseAlarm('vehicle', E105_INFO, v, `天車 ${v.id}（${v.seg.name}，要切${handName(need)}，${side === 'f' ? '前手' : '後手'}沒切到位）`, opts);
+  a.handSide = side; v.fault = a; v.v = 0; v.handSw = null; v.handNeed = need; return a;
+}
+const E205_INFO = { code: 'E-205', title: '夾爪狀態不明（開、閉極限都沒亮）',
+  what: '放貨時夾爪動作到一半停住，開極限、閉極限兩個感測器都沒亮，天車不知道夾爪現在是開還是閉，FOUP 有沒有夾牢也不確定。',
+  impact: '天車停在 Port 上方，吊帶放著，後面的車排隊。夾爪狀態不明時貨不能留在車上，一定要清貨。',
+  steps: ['警報清除（天車切手動）', '人員扶住 FOUP，把貨清到推車或機台上', '夾爪切到開極限', '捲揚、側移回原點', '歸原點，原點成功後切上線'] };
+// 教學觸發：下一台「放貨」的天車夾爪狀態不明／下一台在機台下降快到底的天車停住（貨離機台很近）／下一台故障的車無法復歸
+function raiseClawUnknown() { pendingTransferFault = { clawUnknown: true, autoFail: true }; log('下一台放貨的天車，夾爪會停在半途（狀態不明）'); return null; }
+function raiseNearPort() { pendingTransferFault = { nearPort: true, autoFail: true }; log('下一台在機台放貨的天車，捲揚會在快到底時停住'); return null; }
+function raiseNoRecover() { return raiseVehicleFault(null, { noRecover: true, autoFail: true }); }
+// ---------- 光閘遮斷／機台異常：E84 的 HO_AVBL 掉下來，取放貨中斷 ----------
+const E204_INFO = { code: 'E-204', title: '取放貨中斷：HO_AVBL OFF（光閘遮斷／機台異常）',
+  what: '天車在機台 Load Port 取放貨時，機台送來的 E84 訊號 HO_AVBL（可以交握）突然變 OFF。常見原因：Load Port 前面的光閘被擋到（人員、手推車、工具伸進去），或是機台本身異常。',
+  impact: '天車立刻停止捲揚動作，吊帶和夾爪停在半空中，這次取放貨失敗；後面的車在 Bay 裡排隊。機台端也會跳警報。',
+  steps: ['確認光閘區域淨空（沒有人員、物品擋住）', '到機台端排除異常、讓 HO_AVBL 恢復 ON', '天車操作介面：警報清除 → 捲揚原點 → 側移原點 → 切自動', '天車會重新做一次 E84 交握再取放貨'] };
+let pendingCurtain = false;
+const transferPort = v => v.job ? (v.op === 'pick' ? v.job.from : v.job.to) : null;
+const hoAvbl = p => !!p && p.owner.type === 'machine' && !p.owner.down && !(p.curtain > simTime);   // 機台給的 HO_AVBL
+// 光閘遮斷：stepTransfer 在天車開始下降時呼叫（pendingCurtain），或手動觸發時直接找正在取放的車
+function raiseCurtain(v, opts = {}) {
+  if (!v) {
+    v = pickA(vehicles.filter(x => !x.fault && ['lower', 'grip', 'release'].includes(x.state) && transferPort(x) && transferPort(x).owner.type === 'machine'));
+    if (!v) { pendingCurtain = opts.pending || true; log('下一台在機台 Load Port 開始下降的天車，光閘會被擋到'); return null; }
+  }
+  pendingCurtain = false;
+  const port = transferPort(v);
+  port.curtain = simTime + (opts.block || 5);                     // 光閘被擋 5 秒
+  curtainFx(port, true);
+  log(`🚧 ${port.name} 光閘被遮斷 → E84 HO_AVBL OFF`);
+  return e204(v, port, '光閘遮斷', opts);
+}
+function e204(v, port, why, opts = {}) {
+  const a = raiseAlarm('transfer', E204_INFO, v, `天車 ${v.id} @ ${port.name}（${why}）`, opts);
+  v.fault = a; a.port = port; return a;
+}
+// 光閘的紅色光束（被擋到時閃）
+const curtainBeams = new Map();
+function curtainFx(port, on) {
+  if (on && !curtainBeams.has(port)) {
+    const g = groupAt(port.seg, port.d), m = mat(0xff2020, { emissive: 0xff2020, emissiveIntensity: 2 });
+    for (let k = 0; k < 6; k++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.012, 0.012), m); b.position.set(0, 1.12 + k * 0.13, LC_Z); g.add(b); }
+    curtainBeams.set(port, { g, m });
+  }
+  if (!on && curtainBeams.has(port)) { scene.remove(curtainBeams.get(port).g); curtainBeams.delete(port); }
+}
+function curtainTick(t) {
+  for (const [p, fx] of curtainBeams) {
+    if (!(p.curtain > simTime)) { curtainFx(p, false); continue; }
+    fx.m.emissiveIntensity = Math.sin(t * 12) > 0 ? 2.2 : 0.2;
+  }
+}
 // 派車控制系統當機（中央派車停止；自主接任務不受影響）
 let hostDown = null;
 const OCS_TARGET = { name: 'OCS', x: 0, z: 0 };
@@ -106,6 +168,7 @@ function raiseAlarm(type, info, target, label, opts = {}) {
   // 天車的異常先「自動復歸」：天車自己重試幾秒，成功就繼續跑；失敗才需要人到現場用操作介面復歸
   if ((type === 'vehicle' || type === 'transfer') && AUTO_REC_P[info.code] !== undefined) {
     a.autoRec = { t: AUTO_REC_TIME, ok: opts.autoFail ? false : opts.autoOk ? true : rndA() < AUTO_REC_P[info.code] };
+    if (opts.noRecover || (!opts.autoFail && !a.autoRec.ok && type === 'vehicle' && rndA() < 0.12)) a.noRecover = true;   // 少數情況：連人工都復歸不了，要推車
   }
   a.marker = alarmMarker(`⚠ ${info.code}`);
   alarms.push(a);
@@ -129,7 +192,10 @@ function raiseTransferFault(v, opts) {
   if (pendingTransferFault && pendingTransferFault !== true) opts = pendingTransferFault;
   pendingTransferFault = false;
   const port = v.job ? (v.op === 'pick' ? v.job.from : v.job.to) : null;
-  const a = raiseAlarm('transfer', pickInfo('transfer'), v, `天車 ${v.id} @ ${port ? port.name : v.seg.name}`, opts);
+  opts = opts || {};
+  const info = opts.clawUnknown ? E205_INFO : opts.nearPort ? ALARM_INFO.transfer[2] : pickInfo('transfer');
+  const a = raiseAlarm('transfer', info, v, `天車 ${v.id} @ ${port ? port.name : v.seg.name}`, opts);
+  if (opts.clawUnknown) { a.clawUnknown = true; v.claw = 0.5; }
   v.fault = a; return a;
 }
 function raiseMachineDown(m, opts) {
@@ -137,6 +203,8 @@ function raiseMachineDown(m, opts) {
   if (!m) return null;
   const a = raiseAlarm('machine', pickInfo('machine'), m, `機台 ${m.name}`, opts);
   m.down = a;
+  // 機台異常 → HO_AVBL OFF：正在這台機台的 Load Port 上取放貨的天車也跟著中斷
+  for (const v of vehicles) if (!v.fault && ['lower', 'grip', 'release', 'raise'].includes(v.state) && transferPort(v) && transferPort(v).owner === m) e204(v, transferPort(v), '機台異常');
   reassignJobs(a, q => q.owner === m);
   return a;
 }

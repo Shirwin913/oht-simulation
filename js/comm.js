@@ -36,7 +36,7 @@ aps.forEach((a, i) => { a.idx = i; a.color = new THREE.Color().setHSL((i * 0.618
   for (const a of aps) {
     a.ledMat = mat(0x0a2a12, { emissive: 0x22c55e, emissiveIntensity: 1.2 });
     const led = new THREE.Mesh(ledGeo, a.ledMat); led.position.set(a.x, 10.31, a.z + 0.18); scene.add(led); a.led = led;
-    const lb = makeLabel(a.id, { scale: 0.7, w: 170, bg: 'rgba(15,23,42,.8)', fg: '#a5f3fc' }); lb.position.set(a.x, 9.75, a.z); scene.add(lb); a.label = lb;
+    const lb = makeLabel(a.id, { scale: 0.8, w: 230, bg: 'rgba(15,23,42,.8)', fg: '#a5f3fc' }); lb.position.set(a.x, 9.75, a.z); scene.add(lb); a.label = lb;
     // 涵蓋範圍（地板上的圓圈，勾「顯示無線網路」才看得到）
     a.ringMat = new THREE.MeshBasicMaterial({ color: a.color, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
     a.ring = new THREE.Mesh(new THREE.RingGeometry(AP_RANGE - 0.25, AP_RANGE, 72), a.ringMat);
@@ -68,10 +68,19 @@ function noCommMark(v, on) {
 
 const vPos = v => v.seg.at(Math.min(v.d, v.seg.len));                   // 天車在軌道上的位置（不靠畫面更新）
 const apDist = (a, v) => { const [x, z] = vPos(v); return Math.hypot(a.x - x, a.z - z); };
+// ---------- AP 連線數上限：同一台 AP 同時能連的天車有限，滿了新來的車只能找別台，找不到就斷線 ----------
+let AP_CAP = 6, apFullCount = 0;   // 預設 6：平常幾乎不會滿，前面有車故障擋路、後面塞一串時就會滿
+const apLoad = new Map();
+const loadOf = a => apLoad.get(a) || 0;
+// 找收得到、而且還有空位的 AP 裡最近的一台；第三個值＝範圍內有 AP 但都滿了
 function bestAp(v) {
-  let best = null, bd = Infinity;
-  for (const a of aps) if (!a.down) { const d = apDist(a, v); if (d < bd) { bd = d; best = a; } }
-  return bd <= AP_RANGE ? [best, bd] : [null, Infinity];
+  let best = null, bd = Infinity, full = false;
+  for (const a of aps) if (!a.down) {
+    const d = apDist(a, v); if (d > AP_RANGE) continue;
+    if (a !== v.ap && a !== v.nextAp && loadOf(a) >= AP_CAP) { full = true; continue; }
+    if (d < bd) { bd = d; best = a; }
+  }
+  return best ? [best, bd, false] : [null, Infinity, full];
 }
 const commOk = v => !!v.ap && !v.noComm;          // 派車系統只派給「連得上」的車
 
@@ -80,25 +89,33 @@ let commT = 0;
 function commTick(dt) {
   commT += dt; if (commT < 0.25) return; const step = commT; commT = 0;
   if (COMM_MODE === 'mesh') return meshTick(step);
+  // 每台 AP 現在連了幾台（含正在切換過去的）；超過上限（例如剛把上限調低）就把最遠的幾台踢掉
+  apLoad.clear();
+  for (const v of vehicles) { const a = v.ap || v.nextAp; if (a) apLoad.set(a, loadOf(a) + 1); }
+  for (const a of aps) if (loadOf(a) > AP_CAP) {
+    const cl = vehicles.filter(v => v.ap === a).sort((p, q) => apDist(a, q) - apDist(a, p));
+    for (const v of cl.slice(0, loadOf(a) - AP_CAP)) { v.ap = null; apLoad.set(a, loadOf(a) - 1); }
+  }
   for (const v of vehicles) {
     if (v.handover > 0) { v.handover -= step; if (v.handover <= 0) { v.ap = v.nextAp; v.nextAp = null; roamCount++; } continue; }
     const dCur = v.ap && !v.ap.down ? apDist(v.ap, v) : Infinity;
     if (dCur <= ROAM_TH) { if (v.noComm) reconnect(v); continue; }
-    const [b, bd] = bestAp(v);
-    if (!b) { if (dCur <= AP_RANGE) continue; if (!v.noComm) lostComm(v); continue; }   // 收不到任何 AP
-    if (v.noComm) { if (bd <= AP_RANGE - 1.5) { v.ap = b; reconnect(v); } continue; }   // 訊號要夠好才算恢復（避免在邊界一直斷斷續續）
+    const [b, bd, full] = bestAp(v);
+    if (!b) { if (dCur <= AP_RANGE) continue; if (!v.noComm) lostComm(v, full ? 'full' : 'range'); continue; }   // 收不到 AP，或收得到但都滿了
+    if (v.noComm) { if (bd <= AP_RANGE - 1.5) { v.ap = b; apLoad.set(b, loadOf(b) + 1); reconnect(v); } continue; }   // 訊號要夠好才算恢復（避免在邊界一直斷斷續續）
     if (b !== v.ap && (dCur > AP_RANGE || bd < dCur - ROAM_GAIN)) {               // 漫遊：換到比較近的 AP
       if (v.ap && v.ap.down) { const a = alarms.find(x => x.target === v.ap); if (a) a.roamed = (a.roamed || 0) + 1; }
+      if (v.ap) apLoad.set(v.ap, loadOf(v.ap) - 1); apLoad.set(b, loadOf(b) + 1);
       v.nextAp = b; v.ap = null; v.handover = HANDOVER_TIME;
     }
   }
 }
-function lostComm(v) {
-  benchLost++;
+function lostComm(v, why) {
+  benchLost++; if (why === 'full') apFullCount++;
   v.noComm = true; v.ap = null; noCommMark(v, true);
   const a = alarms.find(x => x.type === 'ap'); if (a) a.lost = (a.lost || 0) + 1;
   v.lostAt = simTime; v.lostLogged = false;
-  if (COMM_MODE !== 'mesh') { v.lostLogged = true; log(`📶✕ ${v.id} 通訊中斷（附近沒有可用的 AP）${v.job ? '：手上的指令照做，但收不到新指令' : ''}`); }
+  if (COMM_MODE !== 'mesh') { v.lostLogged = true; log(`📶✕ ${v.id} 通訊中斷（${why === 'full' ? `附近的 AP 連線數都滿了，上限 ${AP_CAP} 台` : '附近沒有可用的 AP'}）${v.job ? '：手上的指令照做，但收不到新指令' : ''}`); }
 }
 // Mesh：車子開過網路比較稀的地方常常斷幾秒又接上，太多了不一一寫紀錄；斷超過 15 秒才寫
 const MESH_LOG_T = 15;
@@ -132,39 +149,72 @@ gws.forEach((g, i) => { g.idx = i; g.color = new THREE.Color(0xf59e0b); });
   for (const g of gws) {
     g.ledMat = mat(0x0a2a12, { emissive: 0x22c55e, emissiveIntensity: 1.2 });
     g.led = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.02, 0.04), g.ledMat); g.led.position.set(g.x, 10.24, g.z + 0.24); g.led.visible = false; scene.add(g.led);
-    g.label = makeLabel(g.id, { scale: 0.75, w: 180, bg: 'rgba(120,53,15,.85)', fg: '#fde68a' }); g.label.position.set(g.x, 9.65, g.z); g.label.visible = false; scene.add(g.label);
+    g.label = makeLabel(g.id, { scale: 0.85, w: 240, bg: 'rgba(120,53,15,.85)', fg: '#fde68a' }); g.label.position.set(g.x, 9.65, g.z); g.label.visible = false; scene.add(g.label);
     g.ringMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false });
     g.ring = new THREE.Mesh(new THREE.RingGeometry(GW_R - 0.3, GW_R, 72), g.ringMat); g.ring.rotation.x = -Math.PI / 2; g.ring.position.set(g.x, 0.05, g.z); g.ring.visible = false; scene.add(g.ring);
   }
 }
-let meshStat = { ok: 0, avgHop: 0, maxHop: 0 };
+let meshStat = { ok: 0, avgHop: 0, maxHop: 0, avgLat: 0, maxLat: 0 };
+// Mesh 的限制（跟固定 AP 的「連線數上限」對應，比較才公平）
+let GW_CAP = 14;            // 一台閘道器最多接幾台車（包含經過別台車轉送進來的）
+let RELAY_CAP = 10;          // 一台天車最多幫幾台車轉送（它後面整串的車都算）
+const HOP_MS = 5, CROWD_K = 6, LAT_MAX = 100;   // 每一跳的延遲＝5 ms ×（1＋(附近車數÷6)²）：車越擠延遲增加越快；總延遲超過 100 ms 就逾時、算斷線
 function meshTick(step) {
-  // 從每台閘道器開始做廣度優先搜尋（BFS）：一跳一跳找到每台車，記下要經過誰（parent）、幾跳（hops）
-  const P = vehicles.map(vPos), n = vehicles.length, hop = new Array(n).fill(-1), par = new Array(n).fill(null), root = new Array(n).fill(null), q = [];
-  for (const g of gws) if (!g.down) for (let i = 0; i < n; i++) {
-    if (hop[i] === 1) continue;
-    if (Math.hypot(P[i][0] - g.x, P[i][1] - g.z) <= GW_R) { hop[i] = 1; par[i] = g; root[i] = g; q.push(i); }
+  // 從閘道器開始，一層一層往外找：每台車挑一個「收得到、而且還有容量」的上一跳（優先用原本那台，比較穩定）
+  const P = vehicles.map(vPos), n = vehicles.length;
+  const hop = new Array(n).fill(-1), par = new Array(n).fill(null), parI = new Array(n).fill(-1), root = new Array(n).fill(null);
+  const desc = new Array(n).fill(0), lat = new Array(n).fill(0), full = new Array(n).fill(false), crowd = new Array(n).fill(0);
+  const near = (i, j) => Math.hypot(P[i][0] - P[j][0], P[i][1] - P[j][1]) <= MESH_R;
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (near(i, j)) { crowd[i]++; crowd[j]++; }
+  const delay = i => HOP_MS * (1 + (crowd[i] / CROWD_K) ** 2);
+  gws.forEach(g => { g.load = 0; });
+  // 第 1 跳：直接連閘道器
+  let frontier = [];
+  const order = [...vehicles.keys()].sort((a, b) => Math.min(...gws.map(g => Math.hypot(P[a][0] - g.x, P[a][1] - g.z))) - Math.min(...gws.map(g => Math.hypot(P[b][0] - g.x, P[b][1] - g.z))));
+  for (const i of order) {
+    const v = vehicles[i];
+    const cand = gws.filter(g => !g.down && Math.hypot(P[i][0] - g.x, P[i][1] - g.z) <= GW_R);
+    const ok = cand.filter(g => g.load < GW_CAP);
+    if (cand.length && !ok.length) full[i] = true;
+    if (!ok.length) continue;
+    const g = ok.includes(v.meshParent) ? v.meshParent : ok.sort((a, b) => a.load - b.load)[0];
+    hop[i] = 1; par[i] = g; root[i] = g; g.load++; lat[i] = delay(i); frontier.push(i);
   }
-  for (let h = 0; h < q.length; h++) {
-    const i = q[h];
-    for (let j = 0; j < n; j++) if (hop[j] < 0 && Math.hypot(P[i][0] - P[j][0], P[i][1] - P[j][1]) <= MESH_R) {
-      hop[j] = hop[i] + 1; par[j] = vehicles[i]; root[j] = root[i]; q.push(j);
+  // 第 2 跳以後：經過別台車轉送
+  const canTake = i => { for (let k = i; k >= 0; k = parI[k]) if (desc[k] >= RELAY_CAP) return false; return root[i].load < GW_CAP; };
+  for (let h = 2; frontier.length; h++) {
+    const next = [];
+    for (let j = 0; j < n; j++) if (hop[j] < 0) {
+      const cand = frontier.filter(i => near(i, j)); if (!cand.length) continue;
+      const ok = cand.filter(canTake);
+      if (!ok.length) { full[j] = true; continue; }
+      const prev = ok.find(i => vehicles[i] === vehicles[j].meshParent);
+      const i = prev !== undefined ? prev : ok.sort((a, b) => desc[a] - desc[b])[0];
+      hop[j] = h; par[j] = vehicles[i]; parI[j] = i; root[j] = root[i]; full[j] = false;
+      for (let k = i; k >= 0; k = parI[k]) desc[k]++;
+      root[i].load++; lat[j] = lat[i] + delay(j); next.push(j);
     }
+    frontier = next;
   }
-  let ok = 0, sum = 0, mx = 0;
+  let ok = 0, sum = 0, mx = 0, latSum = 0, latMax = 0;
   vehicles.forEach((v, i) => {
-    v.meshHops = hop[i]; v.meshParent = par[i];
-    if (hop[i] > 0) {
-      ok++; sum += hop[i]; mx = Math.max(mx, hop[i]);
+    v.meshHops = hop[i]; v.meshParent = par[i]; v.meshLat = lat[i]; v.meshRelay = desc[i];
+    const good = hop[i] > 0 && lat[i] <= LAT_MAX;
+    if (good) {
+      ok++; sum += hop[i]; mx = Math.max(mx, hop[i]); latSum += lat[i]; latMax = Math.max(latMax, lat[i]);
       if (v.ap !== root[i] && v.ap && v.ap.down) { const a = alarms.find(x => x.target === v.ap); if (a) a.roamed = (a.roamed || 0) + 1; }
       v.ap = root[i]; v.lostT = 0; if (v.noComm) reconnect(v);
     } else {
+      const why = hop[i] > 0 ? 'latency' : full[i] ? 'full' : 'range';
       v.lostT = (v.lostT || 0) + step;
-      if (!v.noComm && v.lostT >= MESH_LOST_T) lostComm(v);
-      if (v.noComm && !v.lostLogged && simTime - v.lostAt >= MESH_LOG_T) { v.lostLogged = true; log(`📶✕ ${v.id} Mesh 連不到任何閘道器，已經 ${MESH_LOG_T} 秒${v.job ? '：手上的指令照做，但收不到新指令' : ''}`); }
+      if (!v.noComm && v.lostT >= MESH_LOST_T) lostComm(v, why);
+      if (v.noComm && !v.lostLogged && simTime - v.lostAt >= MESH_LOG_T) {
+        v.lostLogged = true;
+        log(`📶✕ ${v.id} Mesh 通訊中斷已經 ${MESH_LOG_T} 秒（${{ latency: '附近車太多、頻道擁擠，延遲太大', full: '附近能轉送的車或閘道器都滿了', range: '附近沒有車可以轉送、也收不到閘道器' }[why]}）${v.job ? '：手上的指令照做，但收不到新指令' : ''}`);
+      }
     }
   });
-  meshStat = { ok, avgHop: ok ? sum / ok : 0, maxHop: mx };
+  meshStat = { ok, avgHop: ok ? sum / ok : 0, maxHop: mx, avgLat: ok ? latSum / ok : 0, maxLat: latMax };
 }
 function setCommMode(m) {
   if (m === COMM_MODE) return;
@@ -173,6 +223,7 @@ function setCommMode(m) {
   vehicles.forEach(v => { v.ap = null; v.handover = 0; v.nextAp = null; v.lostT = 0; v.meshHops = -1; });
   if (m === 'ap') vehicles.forEach(v => { const [b] = bestAp(v); if (b) { v.ap = b; if (v.noComm) reconnect(v); } });
   else meshTick(0);
+  apLoad.clear();
   log(m === 'mesh' ? '📡 通訊方式切換：天車 Mesh 網狀網路（天車互相轉送，經閘道器接回控制系統）' : '📶 通訊方式切換：固定 AP＋漫遊');
 }
 
@@ -184,14 +235,21 @@ function updateCommVisuals(t) {
   for (const g of gws) {
     g.led.visible = mesh; g.label.visible = mesh && showLabels; g.ring.visible = mesh && showComm;
     g.ledMat.emissive.setHex(g.down ? 0xef4444 : 0x22c55e); g.ledMat.emissiveIntensity = g.down ? (Math.sin(t * 6) > 0 ? 1.8 : 0.1) : 1.2;
-    g.ringMat.color.setHex(g.down ? 0xef4444 : 0xf59e0b);
+    const gl = g.load || 0;
+    g.ringMat.color.setHex(g.down || gl >= GW_CAP ? 0xef4444 : gl >= GW_CAP * 0.75 ? 0xfacc15 : 0xf59e0b);
+    const lt = `${g.id}  ${gl}/${GW_CAP}`; if (g.lastLoadTxt !== lt) { g.lastLoadTxt = lt; g.label.userData.draw(lt); }
   }
   if (apMeshes) apMeshes.forEach(m => m.visible = !mesh);
   for (const a of aps) {
     a.ledMat.emissive.setHex(a.down ? 0xef4444 : 0x22c55e);
     a.ledMat.emissiveIntensity = a.down ? (Math.sin(t * 6) > 0 ? 1.8 : 0.1) : 1.2;
     a.ring.visible = showComm && !mesh; a.led.visible = !mesh; a.label.visible = !mesh && showLabels;
-    if (a.down) { a.ringMat.color.setHex(0xef4444); a.ringMat.opacity = 0.6; } else { a.ringMat.color.copy(a.color); a.ringMat.opacity = 0.35; }
+    const ld = loadOf(a);
+    if (a.down) { a.ringMat.color.setHex(0xef4444); a.ringMat.opacity = 0.6; }
+    else if (ld >= AP_CAP) { a.ringMat.color.setHex(0xef4444); a.ringMat.opacity = 0.75; }          // 滿了：紅
+    else if (ld >= AP_CAP * 0.75) { a.ringMat.color.setHex(0xfacc15); a.ringMat.opacity = 0.6; }    // 快滿：黃
+    else { a.ringMat.color.copy(a.color); a.ringMat.opacity = 0.35; }
+    const lt = `${a.id}  ${ld}/${AP_CAP}`; if (a.lastLoadTxt !== lt) { a.lastLoadTxt = lt; a.label.userData.draw(lt); }   // 名牌顯示連線數／上限
   }
   for (const [v, m] of noCommMarks) { if (!vehicles.includes(v)) { scene.remove(m); noCommMarks.delete(v); continue; } const p = v.group.position; m.position.set(p.x, p.y + 1.55, p.z); }
   commLines.visible = showComm; meshWeb.visible = showComm && mesh;

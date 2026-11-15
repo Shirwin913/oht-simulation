@@ -93,7 +93,7 @@ button.ok:hover { background:#166534; }
 #hmi .lamps { display:flex; gap:8px; }
 #hmi .lampsBox { display:flex; flex-direction:column; gap:5px; }
 #hmi .lamp { width:58px; height:58px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#86efac,#16a34a); border:3px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,.3);
-  font-weight:700; display:flex; align-items:center; justify-content:center; cursor:default; user-select:none; }
+  font-weight:700; display:flex; align-items:center; justify-content:center; cursor:pointer; user-select:none; }
 #hmi .lamp.blinkL { animation:hblink .6s infinite; }
 #hmi .lamp.dim { background:radial-gradient(circle at 35% 30%,#e5e7eb,#9ca3af); color:#374151; }
 #hmi .lamp.man { background:radial-gradient(circle at 35% 30%,#fde68a,#d97706); }
@@ -247,3 +247,19 @@ button.ok:hover { background:#166534; }
 .btab th { color:#e0f2fe; font-size:12px; }
 .btab td.best { background:rgba(34,197,94,.22); color:#bbf7d0; font-weight:700; }
 .btab td.worst { background:rgba(239,68,68,.18); color:#fecaca; }
+
+/* E84 訊號燈（操作介面主畫面） */
+#hmi .e84g { display:flex; flex-wrap:wrap; gap:3px; align-items:center; margin:3px 0; }
+#hmi .e84g b { width:68px; font-size:11px; color:#475569; }
+#hmi .e84l { padding:1px 5px; border-radius:3px; font-size:10.5px; background:#e2e8f0; color:#64748b; border:1px solid #cbd5e1; }
+#hmi .e84l.on { background:#4ade80; color:#064e3b; border-color:#16a34a; font-weight:700; }
+#hmi .e84l.bad { background:#ef4444; color:#fff; border-color:#991b1b; animation:hblink .8s infinite; }
+
+#hmi .rec .cg { display:flex; gap:4px; margin-top:4px; } #hmi .rec .cg button { flex:1; padding:3px 4px; font-size:11px; }
+#hmi .curveOn { color:#b45309; font-weight:700; }
+#hmi .rec .must { color:#b91c1c; font-size:11px; margin-top:3px; font-weight:600; }
+#hmi .svl { display:inline-block; min-width:44px; padding:3px 8px; border-radius:5px; text-align:center; font-weight:700; border:1px solid; cursor:pointer; user-select:none; }
+#hmi .svl.on { background:#4ade80; border-color:#16a34a; color:#14532d; }
+#hmi .svl.off { background:#ef4444; border-color:#b91c1c; color:#fff; }
+#hmi button.hold { touch-action:none; user-select:none; }
+#hmi button.hold.holding { background:#fde68a; border-color:#d97706; }

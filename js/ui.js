@@ -29,8 +29,11 @@ function updateUI() {
   $('commBadge').textContent = COMM_MODE === 'mesh' ? '📡 通訊：天車 Mesh 網狀網路' : '📶 通訊：固定 AP＋漫遊';
   $('commBadge').className = COMM_MODE === 'mesh' ? 'mesh' : '';
   $('commInfo').innerHTML = (COMM_MODE === 'mesh'
-    ? `閘道器：${gws.length - gws.filter(g => g.down).length}／${gws.length} 台正常 · 連上 ${meshStat.ok}／${vehicles.length} 台 · 平均 ${meshStat.avgHop.toFixed(1)} 跳、最多 ${meshStat.maxHop} 跳`
-    : `AP：${aps.length - aps.filter(a => a.down).length}／${aps.length} 台正常 · 漫遊（換 AP）${roamCount} 次`) +
+    ? `閘道器：${gws.length - gws.filter(g => g.down).length}／${gws.length} 台正常 · 連上 ${meshStat.ok}／${vehicles.length} 台 · 平均 ${meshStat.avgHop.toFixed(1)} 跳、最多 ${meshStat.maxHop} 跳` +
+      `<br>延遲：平均 ${Math.round(meshStat.avgLat)} ms、最大 ${Math.round(meshStat.maxLat)} ms（超過 ${LAT_MAX} ms 算逾時）· 最滿的閘道器 ${(() => { const g = gws.slice().sort((p, q) => (q.load || 0) - (p.load || 0))[0]; return `${g.id} ${g.load || 0}／${GW_CAP}`; })()} · 容量滿了連不上 ${apFullCount} 次`
+    : `AP：${aps.length - aps.filter(a => a.down).length}／${aps.length} 台正常 · 漫遊（換 AP）${roamCount} 次` + (() => {
+        const top = aps.slice().sort((p, q) => loadOf(q) - loadOf(p))[0], ld = loadOf(top);
+        return `<br>最滿的 AP：${top.id} <b style="color:${ld >= AP_CAP ? '#f87171' : ld >= AP_CAP * 0.75 ? '#facc15' : 'inherit'}">${ld}／${AP_CAP}</b> · 因為 AP 滿了連不上 ${apFullCount} 次`; })()) +
     (DISPATCH_MODE === 'auto' ? `<br>自主接任務 ${autoStat.claims} 筆 · 平均 ${(autoStat.bids / Math.max(1, autoStat.claims)).toFixed(1)} 台出價 · 有競爭 ${autoStat.contested} 筆` : '') +
     `<br>通訊中斷：<b style="color:${nc.length ? '#f87171' : 'inherit'}">${nc.length} 台</b>${nc.length ? `（${nc.map(v => v.id).join('、')}）` : ''}${ho ? ` · 切換 AP 中 ${ho} 台` : ''}` +
     `<br>E84 交握完成 ${e84Count} 次`;
@@ -70,8 +73,8 @@ $('btnVehPm').onclick = () => { if (followed) vehPm(followed); updateUI(); };
 // 異常事件
 document.querySelectorAll('[data-alarm]').forEach(b => b.onclick = () => {
   const t = b.dataset.alarm;
-  const a = ({ vehicle: raiseVehicleFault, transfer: raiseTransferFault, machine: raiseMachineDown, track: raiseTrackBlock, ap: raiseApDown, host: raiseHostDown })[t]();
-  if (a) { openAlarmCard(a); focusAlarm(a); } else if (t !== 'transfer') log('現在找不到可以發生這個異常的對象');
+  const a = ({ vehicle: raiseVehicleFault, transfer: raiseTransferFault, machine: raiseMachineDown, track: raiseTrackBlock, ap: raiseApDown, host: raiseHostDown, curtain: raiseCurtain, hand: raiseHandFail, claw: raiseClawUnknown, near: raiseNearPort, norec: raiseNoRecover })[t]();
+  if (a) { openAlarmCard(a); focusAlarm(a); } else if (!['transfer', 'curtain', 'hand', 'claw', 'near'].includes(t)) log('現在找不到可以發生這個異常的對象');
   updateUI();
 });
 function setShowComm(on) { showComm = on; $('showComm').checked = on; }
@@ -85,6 +88,9 @@ $('btnCommInfo').onclick = () => {                                      // 看�
   $('icComm').onclick = () => { setShowComm(!showComm); sync(); }; sync();
 };
 $('btnE84Info').onclick = () => openInfoCard('e84');
+$('apCap').oninput = e => { AP_CAP = +e.target.value; $('apCapVal').textContent = AP_CAP + ' 台'; };
+$('gwCap').oninput = e => { GW_CAP = +e.target.value; $('gwCapVal').textContent = GW_CAP + ' 台'; };
+$('relayCap').oninput = e => { RELAY_CAP = +e.target.value; $('relayCapVal').textContent = RELAY_CAP + ' 台'; };
 $('commMode').onchange = e => { setCommMode(e.target.value); setShowComm(true); updateUI(); };   // 切換時自動打開顯示，才看得出差別
 $('dispMode').onchange = e => { DISPATCH_MODE = e.target.value; log(DISPATCH_MODE === 'auto' ? '🤝 派車方式切換：天車自主接任務（競標）' : '🖥 派車方式切換：中央派車（MCS 指定最近的車）'); updateUI(); };
 $('btnMeshInfo').onclick = () => { const prev = showComm; setShowComm(true); openInfoCard('mesh', () => setShowComm(prev)); };
@@ -178,6 +184,8 @@ const INFO_CARDS = {
     天車<b>不是</b>每台都當 AP 組 Mesh，而是一直連著附近的一台 AP。這個模擬每個區塊掛 6 台（全廠 ${aps.length} 台），每台範圍約 ${AP_RANGE} 公尺。</p>
     <h4>漫遊（換 AP）</h4><p>天車邊開邊量訊號：離目前的 AP 太遠（這裡設 ${ROAM_TH} 公尺）、而且附近有明顯比較近的 AP，就切過去，切換只要零點幾秒，不用斷線重連。
     勾「顯示無線網路」可以看到每台車連到哪一台 AP（線的顏色＝AP），地上的圓圈是每台 AP 的範圍。</p>
+    <h4>AP 連線數上限</h4><p>一台 AP 同時能連的天車有限（這裡預設 ${AP_CAP} 台，可以在「系統功能」調）。滿了，新來的車只能找旁邊的 AP；旁邊也滿了或收不到，就會斷線。
+    平常車子分散不會滿；但前面有車故障擋路、後面塞了一長串時，那一區的 AP 就可能被塞滿，後面的車跟著斷線。顯示無線網路時，AP 名牌會寫「連線數／上限」，範圍圈快滿變黃、滿了變紅。</p>
     <h4>AP 斷線時</h4><p>相鄰 AP 的範圍刻意重疊，所以一台 AP 斷了，大部分車會漫遊到隔壁；隔壁也收不到的角落，天車會「通訊中斷」（頭上出現紅色記號）：</p>
     <ul class="impact"><li>手上已經收到的指令照做（路線已經在車上）</li><li>收不到新指令，派車系統不會派給它</li>
     <li>做完了回報不出去，MCS 不知道 FOUP 已經放好，那個 FOUP 的下一站也會延遲；恢復通訊後才補回報</li><li>前後車防撞靠車頭感測器，跟無線網路無關，所以不會因為斷線撞車</li></ul>
@@ -185,9 +193,12 @@ const INFO_CARDS = {
   e84: ['🤝 E84 交握（天車 ↔ 機台 Load Port）', `
     <h4>為什麼要交握</h4><p>天車要把 FOUP 放到機台的 Load Port（或從上面拿走）之前，要先跟機台確認「現在可以」，不然機台正在動作時放下去會撞到。
     這套訊號的標準叫 SEMI E84，通常是 Load Port 旁邊的光通訊器（PIO）跟天車對傳，跟無線 AP 是分開的。</p>
-    <h4>流程（簡化）</h4><ol><li>天車：CS_0（選哪個 Port）＋ VALID（我要開始了）</li><li>機台：L_REQ（可以放）／U_REQ（可以取）</li>
+    <h4>流程（簡化）</h4><ol><li>前提：機台送出 HO_AVBL（可以交握）＝ON，代表機台正常、Load Port 前面的光閘沒被擋到</li><li>天車：CS_0（選哪個 Port）＋ VALID（我要開始了）</li><li>機台：L_REQ（可以放）／U_REQ（可以取）</li>
     <li>天車：TR_REQ（請求搬運）</li><li>機台：READY → 天車：BUSY（開始下降、取放）</li><li>取放完、捲揚升上來：天車 BUSY 關、COMPT（完成）</li><li>機台 READY 關 → 天車 VALID、COMPT 關，交握結束</li></ol>
-    <h4>在模擬裡看</h4><ul class="impact"><li>跟隨一台天車，到機台 Load Port 時狀態會顯示 E84 每一步；Port 的燈號青色快閃＝交握中</li>
+    <h4>光閘和 HO_AVBL</h4><p>Load Port 靠走道那一側有兩根光閘柱（頂端橘色），柱子上有指示燈條：平常是<b>綠色</b>，被擋到時變<b>紅色</b>，中間有看不見的光束。取放貨過程中只要有東西擋到光閘，或機台異常，
+    機台的 HO_AVBL 就會變 OFF，天車立刻停止捲揚、這次取放貨失敗（E-204），要人員確認淨空、機台復歸後，再用操作介面復歸，天車會重新交握再做一次。
+    「異常」分頁的「光閘遮斷（E84 中斷）」可以示範：光束會變紅閃，操作介面主畫面的 E84 訊號燈 HO_AVBL 會變紅。</p>
+    <h4>在模擬裡看</h4><ul class="impact"><li>跟隨一台天車，到機台 Load Port 時狀態會顯示 E84 每一步；Port 的燈號青色快閃＝交握中；操作介面主畫面有 E84 訊號燈</li>
     <li>STB 儲格是被動的架子，不用交握，直接放</li>
     <li>機台當機時機台不會回應，天車等 ${E84_TIMEOUT} 秒逾時就放棄：放貨改送 STB、取貨取消</li></ul>
     <p class="mut">實際的訊號時序、逾時時間（TA1～TA3 等）依 E84 規範和各廠設定為準。</p>`],
@@ -196,6 +207,8 @@ const INFO_CARDS = {
     Mesh：每台天車本身也是一個無線節點，會<b>幫別台車轉送</b>訊息；訊息一跳一跳傳到「閘道器」（接有線網路的節點），再回到控制系統。
     這個模擬每個區塊掛 2 台閘道器（黃色，全廠 ${gws.length} 台），天車之間約 ${MESH_R} 公尺內能互傳，閘道器範圍約 ${GW_R} 公尺。</p>
     <h4>在畫面上看</h4><p>上面「通訊方式」選「天車 Mesh 網狀網路」，勾「顯示無線網路」：每台車拉一條線到它的「下一跳」（另一台車或閘道器），顏色代表第幾跳：綠＝1～2 跳、黃＝3 跳、橘＝4 跳、紅＝5 跳以上。</p>
+    <h4>Mesh 也有容量限制</h4><p>每台閘道器最多接 ${GW_CAP} 台車（包含經過轉送進來的），每台天車最多幫 ${RELAY_CAP} 台車轉送；大家共用同一個無線頻道，
+    車越擠每一跳的延遲增加越快，總延遲超過 ${LAT_MAX} ms 就逾時。所以 Mesh 不會有「AP 被塞滿」的問題，但塞車時瓶頸會換到「靠近閘道器的轉送車」和「頻道擁擠」。三個上限都可以在「系統功能」調。</p>
     <h4>優點和缺點</h4><ul class="impact"><li>需要的固定設備少，閘道器或某台車斷了會自動改走別條路（自我修復）</li>
     <li>要靠天車夠密：車少、區域偏僻時可能連不上；跳數越多延遲越大</li><li>軌道上休息的空車也能幫忙轉送</li>
     <li>可以試試：觸發「無線 AP 斷線」（Mesh 模式下是閘道器斷線），或減少天車數量，看看斷線的車變多</li></ul>

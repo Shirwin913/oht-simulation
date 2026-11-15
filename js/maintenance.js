@@ -191,7 +191,7 @@ function stepMaintVehicle(v, dt) {
       v.lift = Math.max(0, v.lift - dt / LIFT_TIME); v.lifter.rail = v.lift;
       if (v.lift <= 0) {
         v.lift = 0; v.lifter.rail = 0; v.lifter.busy = null; v.lifter = null; maintDone++;
-        v.state = 'idle'; v.maintReq = null; v.route = []; v.target = null;
+        v.state = 'idle'; v.maintReq = null; v.route = []; v.target = null; v.pushed = false;
         if (v.offline) log(`✔ ${v.id} 回到軌道，保養完成；仍是下線狀態，確認沒問題後請切上線`);
         else log(`✔ ${v.id} 回到軌道，重新上線`);
       }

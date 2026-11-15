@@ -12,22 +12,32 @@ function followPick(filter, key = u => Math.hypot(u.group.position.x, u.group.po
 }
 function closeCards() { if (openAlarm) closeAlarmCard(); if (maintCardOpen) closeMaintCard(); const c = $t('#alarmCard'); if (c) c.style.display = 'none'; }
 const HMI_SEL = { manual: '[data-a="manual"]', clear: '.aclr', 'servo:walk': '[data-a="servo:walk:on"]', 'servo:hoist': '[data-a="servo:hoist:on"]',
-  'jog:walk': '[data-a="jog:walk:1"]', claw: '[data-a="claw:open"]', 'home:hoist': '[data-a="home:hoist"]', 'home:shift': '[data-a="home:shift"]',
-  confirm: '.rec [data-a="confirm"]', release: '.estop', auto: '[data-a="auto"]' };
+  'jog:walk': '[data-hold="walk:1"]', claw: '[data-a="claw:open"]', 'home:hoist': '[data-a="home:hoist"]', 'home:shift': '[data-a="home:shift"]',
+  confirm: '.rec [data-a="confirm"]', release: '.estop', auto: '[data-a="auto"]',
+  cargo: '.rec [data-a="cargo:cart"]', homeall: '[data-a="home:all"]', online: '[data-a="online"]', hand: '.rec [data-a="hand:need"]', hoavbl: '.rec' };
 const HMI_WHY = {
   manual: '異常排除一定先切「手動」：天車就不會被系統自動叫走，人員才能安全操作。', clear: '按畫面下方紅色的「警報清除」：清掉異常碼，天車同時切成手動，人員才能安全操作各軸（異常碼不清，伺服、各軸都不能動）。',
   'servo:walk': '馬達過載時走行伺服會跳脫（Off），清完警報要再把走行「伺服 On」。', 'servo:hoist': '吊帶異常時捲揚伺服跳脫了，要先把捲揚「伺服 On」，捲揚才能動。',
   'jog:walk': '讀不到條碼，天車不知道自己在哪。手動往前「寸動」一小段，讓讀碼器重新讀到條碼。', claw: '夾爪「開」，人員確認 FOUP 有放正。',
   'home:hoist': '捲揚「原點」：把吊帶和夾爪收回車上。', 'home:shift': '側移「原點」：把滑台收回車子正中間。', confirm: '先確認前方軌道上沒有人員、工具或掉落物，再往下做。',
-  release: '把緊急停止解除。', auto: '最後「切自動」：系統檢查步驟都完成、各軸都在原點，天車就恢復運行（取放貨會重新做一次）。',
+  release: '把緊急停止解除。',
+  cargo: '看貨物狀況：要清貨就把 FOUP 放到推車（或機台）上，這裡示範放到推車；不清貨可以選「保留在車上」。',
+  homeall: '按「歸原點」：所有機構依序做一次原點校正，等「原點成功」。', online: '原點成功後「切上線」：天車恢復自動、重新接任務。',
+  hand: '手動切換到需要的手：轉彎切下手、直行切上手（前、後車都不在彎道內才能換）。', hoavbl: '等機台端復歸、光閘淨空，HO_AVBL 恢復 ON。', auto: '最後「切自動」：系統檢查步驟都完成、各軸都在原點，天車就恢復運行（取放貨會重新做一次）。',
 };
 // 異常排除：依異常碼產生步驟（每一步都用操作介面上的按鈕）
 function recoverySteps() {
   const a = vAlarm(tourV()); if (!a) return [];
-  return RECOVERY[a.info.code].filter(s => s === 'auto' || !stepDone(tourV(), a, s)).map(s => ({
-    t: `排除：${STEP_TXT[s]}`, x: HMI_WHY[s], el: HMI_SEL[s], act: true,
-    wait: () => s === 'auto' ? !vAlarm(tourV()) && !tourV().manual : stepDone(tourV(), a, s) && !(tourV().man && Object.keys(tourV().man).length),
-  }));
+  const out = [];
+  for (const s of recList(a).filter(s => s === 'online' || !stepDone(tourV(), a, s))) {
+    if (s === 'homeall' && bogieInCurve(tourV()).some(Boolean)) out.push({   // 停在彎道裡：先寸動移出彎道，才能歸原點、切上線
+      t: '排除：走行寸動，把車移出彎道', x: '前車或後車在彎道內時不能歸原點、也不能切上線。按住「前進」寸動，直到前車、後車都顯示「直線」再放開。', el: '[data-hold="walk:1"]',
+      act: { fn: () => { const v = tourV(); if (v.man) v.man.jog = 4; } },
+      wait: () => { const v = tourV(), out = !bogieInCurve(v).some(Boolean); if (v.man) v.man.jog = out ? 0 : Math.max(v.man.jog || 0, 1); return out; } });
+    out.push({ t: `排除：${STEP_TXT[s]}`, x: HMI_WHY[s], el: HMI_SEL[s],
+      act: s !== 'hoavbl', wait: () => s === 'online' ? !vAlarm(tourV()) && !tourV().manual : stepDone(tourV(), a, s) && !(tourV().man && Object.keys(tourV().man).length) && !tourV().homing });
+  }
+  return out;
 }
 
 // ---------- 章節 ----------
@@ -68,7 +78,7 @@ const CHAPTERS = [
       wait: () => alarms.some(a => a.type === 'transfer' && a.autoRecFailed) },
     { t: '找到那台車', x: '異常發生了，而且自動復歸失敗。吊帶和夾爪停在下面，可能還夾著 FOUP。我們直接開它的操作介面。', pre: () => { const a = alarms.find(a => a.type === 'transfer'); TOUR.ctx.v = a.target; setFollow(a.target); openHmi(a.target, 'quick'); }, el: '.rec' },
     { gen: recoverySteps },
-    { t: '完成！', x: '吊帶收回、切自動以後，天車會把這次取放貨從頭重新做一次。<br>互鎖：有貨又不在放貨位置時按「夾爪開」會被擋下來，因為 FOUP 會掉下去。', el: '#followBar', pre: () => setTimeout(closeHmi, 1500) },
+    { t: '完成！', x: '吊帶收回、歸原點成功、切上線以後，天車會把這次取放貨從頭重新做一次（如果貨被清到推車或機台上，這筆搬運就取消，由系統重新安排）。<br>互鎖：有貨又不在放貨位置時按「夾爪開」會被擋下來，因為 FOUP 會掉下去。', el: '#followBar', pre: () => setTimeout(closeHmi, 1500) },
   ] },
   { name: '4. 優先級與路權', steps: [
     { t: 'Lot 的優先級', x: '每個 Lot 有優先級：一般、急件、特急。這個表格比較各級的平均等車時間；FOUP 色標橘色是急件、紅色是特急。', pre: () => { closeCards(); closeHmi(); setFollow(null); }, el: '.priBox' },

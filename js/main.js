@@ -7,6 +7,10 @@ function updateVisuals(t) {
   const pulse = 0.55 + 0.45 * Math.sin(t * 6);
   for (const p of ports) {
     const f = p.foup;
+    if (p.lcLeds) {                                                          // 光閘燈條：平常綠、被遮斷紅（閃）
+      const blocked = p.curtain > simTime;
+      for (const l of p.lcLeds) setLed(l, blocked ? C.red : C.green, blocked ? 1.6 * pulse + 0.4 : 0.9);
+    }
     if (p.owner.down || p.seg.blocked) setLed(p.ledMat, C.red, 1.4 * pulse);     // 機台當機／區段封鎖：紅燈閃
     else if (p.e84) setLed(p.ledMat, C.cyan, 1.8 * (0.5 + 0.5 * Math.sin(t * 14)));   // E84 交握中：青燈快閃
     else if (p.reserved && !f) setLed(p.ledMat, C.blue, 1.2);
@@ -56,6 +60,7 @@ function updateVisuals(t) {
   VP.finish(vehicles.length);
   updateFoupInstances();
   updateMaintVisuals(t);
+  curtainTick(t);
   updateCommVisuals(t);
 }
 // 機台名牌：只在鏡頭附近顯示（每 0.3 秒判斷一次）
