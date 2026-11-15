@@ -118,7 +118,7 @@ const MODEL = (() => {
     g.computeVertexNormals(); return g;
   };
   const M = OHT_MODEL.meta, out = { meta: M, near: {}, far: {} };
-  for (const k of ['body', 'shift', 'grip']) { out.near[k] = geo(OHT_MODEL.near[k]); out.far[k] = geo(OHT_MODEL.far[k]); }
+  for (const k of ['body', 'shift', 'grip', 'sensor']) { out.near[k] = geo(OHT_MODEL.near[k]); out.far[k] = geo(OHT_MODEL.far[k]); }
   out.mat = vcMat({ roughness: 0.5, metalness: 0.15 });
   // 前後狀態燈：貼在前後外殼頂部下緣的一條燈帶
   out.ledGeo = new THREE.BoxGeometry(0.012, 0.035, 0.62);
@@ -175,9 +175,8 @@ function createVehicle(seg, d) {
       d.rotation.y = Math.atan2(n[0], n[1]);
     });
   });
-  add(box(0.02, 0.12, 0.12, VG.black), faceX(-1.0) + 0.005, -1.0, 0.1);   // 車頭感測窗
-  add(box(0.06, 0.12, 0.14, VG.orange), faceX(-1.5) + 0.02, -1.5, 0.1);   // 前方障礙物感測器
-  add(box(0.02, 0.05, 0.05, VG.red), faceX(-1.5) + 0.055, -1.5, 0.1);
+  // 車頭的測距 Area Sensor（用使用者模型裡的：上下兩組），裝在車頭外側面上
+  const sens = add(new THREE.Mesh(MODEL.near.sensor, MODEL.mat), OX - M.sensorBack + 0.003, BODY_BOT - M.sensorBottom, 0); sens.castShadow = true;
   const plateMat = idPlateMat(id, '#' + accent.getHexString());           // 前後車號牌
   const plateGeo = new THREE.PlaneGeometry(0.34, 0.19);
   const pf = add(new THREE.Mesh(plateGeo, plateMat), OX + 0.006, -0.65, 0); pf.rotation.y = Math.PI / 2;
@@ -288,7 +287,6 @@ const VP = (() => {
     b.add(VG.trimGeo, 0x26282d, null, END_X, 0, 0); b.add(VG.trimGeo, 0x26282d, null, -END_X, 0, 0, Math.PI);
     b.add(new THREE.BoxGeometry(1.12, 0.05, 0.92), GR, null, 0, -0.265, 0);
     [-1, 1].forEach(k => b.add(new THREE.BoxGeometry(2 * (END_X - END_T / 2) + 0.04, 0.04, 0.05), GR, null, 0, BODY_BOT + 0.02, k * 0.47));
-    b.add(new THREE.BoxGeometry(0.06, 0.12, 0.14), 0xff6a1a, null, END_X + END_T / 2 + 0.02, -1.5, 0.1);
   });
   const unitGeo = MODEL.far.shift.clone().translate(0, UNIT_DY, 0);
   const body = new THREE.InstancedMesh(bodyGeo, vcMat({ roughness: 0.45, metalness: 0.15 }), VEH_MAX), unit = new THREE.InstancedMesh(unitGeo, MODEL.mat, VEH_MAX);

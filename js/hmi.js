@@ -179,8 +179,10 @@ function handRows(v) {
 function hmiTick(dt) {
   if (cartFoups.length) cartTick();
   for (const v of vehicles) {
+    detailSample(v, dt);
     if (v.manual && v.handSw) handTick(v, dt);
     if (!v.manual || v.estop || !v.man) continue;
+    if (v.detailMove) { detailTick(v, dt); continue; }
     if (v.homing) { stepHoming(v, dt); continue; }
     const m = v.man, mv = (cur, tgt, spd) => cur + Math.sign(tgt - cur) * Math.min(Math.abs(tgt - cur), spd * dt);
     if (m.hoist !== undefined) { v.hoist = mv(v.hoist, m.hoist, 0.45); v.hv = 0; if (v.hoist === m.hoist) delete m.hoist; }
@@ -254,6 +256,7 @@ function stepHoming(v, dt) {
 let hmiV = null, hmiTab = 'main', hmiMsgText = '', hmiMsgT = 0;
 function hmiMsg(t) { hmiMsgText = t; hmiMsgT = simTime; renderHmi(); }
 function needManual(v, axis) {
+  if (v.detailMove) { hmiMsg('詳細操作執行中，請先停止該軸'); return false; }
   if (v.estop) { hmiMsg('緊急停止中，所有動作禁止。請先「解除急停」'); return false; }
   if (!v.manual) { hmiMsg('要先切「手動」才能操作各軸'); return false; }
   const a = vAlarm(v);
@@ -263,6 +266,11 @@ function needManual(v, axis) {
 }
 function hmiAct(act) {
   const v = hmiV; if (!v) return; hmiInit(v);
+  if (act.startsWith('detail:')) return detailAct(v, act);
+  if (v.detailMove) {
+    if (['stop', 'estop'].includes(act) || act.includes(':off')) detailStop(v, '已停止');
+    else if (!['find', 'offline'].includes(act)) return hmiMsg('詳細操作執行中，請先停止該軸');
+  }
   const a = vAlarm(v), [kind, axis] = act.split(':');
   switch (kind) {
     case 'manual':
@@ -407,7 +415,7 @@ function openHmi(v, tab) {
   hmiV = v || hmiV || vehicles[0]; hmiInit(hmiV); if (tab) hmiTab = tab;
   document.getElementById('hmi').style.display = 'flex'; hmiMsgText = ''; renderHmi();
 }
-function closeHmi() { document.getElementById('hmi').style.display = 'none'; hmiV = null; }
+function closeHmi() { if (hmiV && hmiV.detailMove) detailStop(hmiV, '視窗已關閉，動作停止'); document.getElementById('hmi').style.display = 'none'; hmiV = null; }
 const f1 = x => (Math.round(x * 10) / 10).toFixed(1);
 function hmiData(v) {
   const p = v.group.position, a = vAlarm(v), j = v.job;
@@ -448,7 +456,7 @@ function vehicleSvg(d, v) {
 }
 function renderHmi() {
   const el = document.getElementById('hmi'); if (!el || el.style.display === 'none' || !hmiV) return;
-  if (hmiHold || (document.activeElement && document.activeElement.id === 'hmiSel')) return;
+  if (hmiHold || (document.activeElement && document.activeElement.closest('#hmi input, #hmi select'))) return;
   const v = hmiV; if (!vehicles.includes(v)) return closeHmi();
   const d = hmiData(v), a = d.a, t = Math.floor(simTime);
   const time = `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
@@ -461,6 +469,8 @@ function renderHmi() {
       <div class="hpic">${vehicleSvg(d, v)}</div>
       <div class="hcol"><button class="estop ${v.estop ? 'on' : ''}" data-a="estop"><span>${v.estop ? '解除急停' : 'EMERGENCY STOP'}</span></button>
       <div class="hbox"><h5>天車實際運行資訊</h5>${fld('軟體版本', '教學版 1.0')}${fld('Barcode', d.barcode)}${fld('Encoder', d.enc)}${fld('X 座標', d.x)}${fld('Y 座標', d.y)}${fld('Section ID', d.sect)}${fld('Address ID', d.addr)}${fld(COMM_MODE === 'mesh' ? 'Mesh 連線' : '連線 AP', v.ap ? (COMM_MODE === 'mesh' ? `${v.ap.id}（${v.meshHops} 跳、${Math.round(v.meshLat || 0)} ms）` : v.ap.id) : '—')}</div></div></div>`;
+  } else if (hmiTab === 'detail') {
+    body = renderDetail(v, d);
   } else if (hmiTab === 'quick') {
     const ac = AXIS_OF_CODE[a && a.info.code], code = ax => ac === ax ? d.code : '0';
     const io = [['IN-08 在席檢知', !!v.carry], ['IN-07 過物檢知', false], ['IN-06 吊帶張力 1', !(a && a.info.code === 'E-203')], ['IN-05 吊帶張力 2', true], ['IN-04 吊帶張力 3', true],
@@ -478,7 +488,7 @@ function renderHmi() {
       <details class="iod"><summary>I/O 感測器</summary><div class="io">${io.map(([n, on]) => `<div class="${on ? 'on' : ''}"><span>${n}</span></div>`).join('')}</div></details></div>
       <div class="hcol">${recoveryBox(v, a)}<button class="estop small ${v.estop ? 'on' : ''}" data-a="estop"><span>${v.estop ? '解除急停' : 'E-STOP'}</span></button></div></div>`;
   } else body = `<div class="hempty">教學版沒有開放這個畫面。現場異常排除請用「快速操作」。</div>`;
-  const tabs = [['main', '主畫面'], ['quick', '快速操作（異常排除）']];
+  const tabs = [['main', '主畫面'], ['quick', '快速操作（異常排除）'], ['detail', '詳細操作']];
   el.innerHTML = `<div class="hwin" style="${hmiPos ? `left:${hmiPos[0]};top:${hmiPos[1]};transform:none` : ''}"><div class="hhead">
       <div class="hid">車號 <b class="no">${v.id}</b>${sel}</div>
       <div class="big ${a ? 'alarm' : ''}">${d.status}</div>
@@ -522,7 +532,7 @@ let hmiHold = false, hmiPos = null;
   el.addEventListener('pointerdown', e => { if (e.target.closest('.hhead') && !e.target.closest('button,select')) { const w = el.querySelector('.hwin').getBoundingClientRect(); drag = [e.clientX - w.left, e.clientY - w.top]; } });
   window.addEventListener('pointermove', e => { if (!drag) return; const w = el.querySelector('.hwin'); w.style.left = (e.clientX - drag[0]) + 'px'; w.style.top = (e.clientY - drag[1]) + 'px'; w.style.transform = 'none'; hmiPos = [w.style.left, w.style.top]; });
   window.addEventListener('pointerup', () => { drag = null; });
-  el.addEventListener('change', e => { if (e.target.id === 'hmiSel') { hmiV = vehicles.find(u => u.id === e.target.value); hmiInit(hmiV); hmiMsgText = ''; e.target.blur(); renderHmi(); } });
+  el.addEventListener('change', e => { if (e.target.id === 'hmiSel') { if (hmiV && hmiV.detailMove) detailStop(hmiV, '切換車輛，動作停止'); hmiV = vehicles.find(u => u.id === e.target.value); hmiInit(hmiV); hmiMsgText = ''; e.target.blur(); renderHmi(); } });
 }
 // E84 訊號燈：天車送出的、機台送來的（教學用，照目前的取放步驟推算）
 function e84Signals(v) {

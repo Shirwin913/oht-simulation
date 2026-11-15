@@ -263,3 +263,26 @@ button.ok:hover { background:#166534; }
 #hmi .svl.off { background:#ef4444; border-color:#b91c1c; color:#fff; }
 #hmi button.hold { touch-action:none; user-select:none; }
 #hmi button.hold.holding { background:#fde68a; border-color:#d97706; }
+/* 詳細操作：五軸參數與即時狀態 */
+#hmi .detail-note { padding:8px 10px; margin-bottom:8px; border:1px solid #93c5fd; background:#eff6ff; color:#1e3a8a; line-height:1.6; }
+#hmi .hdetail { display:grid; grid-template-columns:minmax(0, 1fr) 285px; gap:10px; }
+#hmi .detail-axis { padding:9px; margin-bottom:8px; background:#fff; border:1px solid #b6c0ca; border-radius:6px; }
+#hmi .da-title { display:flex; align-items:center; gap:10px; margin-bottom:7px; }
+#hmi .da-title h5 { min-width:34px; margin:0; font-size:15px; }
+#hmi .da-title .done { margin-left:auto; }
+#hmi .da-fields { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
+#hmi .da-fields label { display:flex; flex-direction:column; gap:4px; color:#475569; font-size:11px; }
+#hmi .da-fields input, #hmi .da-fields output { box-sizing:border-box; display:block; width:100%; min-width:0; padding:5px 6px; border:1px solid #94a3b8; border-radius:3px; color:#0f172a; background:#fff; text-align:right; font:600 13px ui-monospace,monospace; }
+#hmi .da-fields output { background:#a5f3fc; border-color:#22b8cf; }
+#hmi .da-fields output.da-code { background:#fef08a; border-color:#eab308; }
+#hmi .da-fields output.bad { background:#fecaca; color:#991b1b; }
+#hmi .da-fields input:focus { outline:2px solid #3b82f6; outline-offset:1px; }
+#hmi .da-note { grid-column:span 4; color:#64748b; line-height:1.6; }
+#hmi .da-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+#hmi .detail-io div { display:flex; justify-content:space-between; padding:4px 6px; margin:3px 0; background:#e2e8f0; border-radius:3px; }
+#hmi .detail-io b { color:#64748b; } #hmi .detail-io .on { background:#dcfce7; } #hmi .detail-io .on b { color:#15803d; }
+#hmi .hdetail aside .hf b { min-width:90px; }
+#hmi .hdetail aside .axt td { white-space:normal; }
+#hmi .hdetail aside .axt th { min-width:30px; }
+#hmi .hdetail aside .estop { width:100%; margin-bottom:8px; }
+@media (max-width:850px) { #hmi .hdetail { grid-template-columns:1fr; } #hmi .da-fields { grid-template-columns:repeat(2,minmax(0,1fr)); } #hmi .da-note { grid-column:span 2; } #hmi .htabs { flex-wrap:wrap; } }
