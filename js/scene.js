@@ -5,12 +5,34 @@ const app = document.getElementById('app');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0f1419);
 scene.fog = new THREE.Fog(0x0f1419, 260, 520);
+// ================== 畫質 ==================
+// 沒有獨立顯卡（內顯）的電腦會卡：自動偵測顯示卡，內顯一開始就用「標準」；
+// 「自動」模式下如果實際每秒畫面數還是太低，會再往下降一級。也可以在「控制」分頁手動選。
+const GFX_LEVELS = {
+  high: { name: '高',   pr: 2,    shadow: 4096, soft: true,  every: 1, lod: 45, fps: 0 },    // 陰影每幀更新、完整細節
+  mid:  { name: '標準', pr: 1.25, shadow: 2048, soft: false, every: 3, lod: 30, fps: 0 },    // 解析度、陰影降一級，陰影每 3 幀更新
+  low:  { name: '省電', pr: 1,    shadow: 0,    soft: false, every: 0, lod: 18, fps: 30 },   // 關陰影、近看細節範圍縮小、最多 30 FPS
+};
+const GFX = (() => {
+  let pref = 'auto'; try { pref = localStorage.getItem('ohtGfx') || 'auto'; } catch (e) {}
+  if (pref !== 'auto' && !GFX_LEVELS[pref]) pref = 'auto';
+  let gpu = '', weak = false;
+  if (!BENCH) try {
+    const gl = document.createElement('canvas').getContext('webgl'), ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+    weak = /Intel|UHD|Iris|HD Graphics|Microsoft Basic|SwiftShader|llvmpipe|Mali|Adreno|PowerVR|Radeon\(TM\) Graphics|Radeon Graphics|Vega \d/i.test(gpu)
+      && !/RTX|GTX|Quadro|Radeon RX|Radeon Pro|Arc\(TM\) A|Arc A/i.test(gpu);
+    const lc = gl && gl.getExtension('WEBGL_lose_context'); if (lc) lc.loseContext();
+  } catch (e) {}
+  return { pref, gpu, weak, level: pref === 'auto' ? (weak ? 'mid' : 'high') : pref, lod: 45, fps: 0, drops: 0 };
+})();
 // 比較實驗（背景執行）不需要畫面：用一個什麼都不畫的假 renderer，省掉 WebGL
 const renderer = BENCH ? { domElement: document.createElement('canvas'), setPixelRatio() {}, setSize() {}, render() {}, shadowMap: {} }
-  : new THREE.WebGLRenderer({ antialias: true });
+  : new THREE.WebGLRenderer({ antialias: !GFX.weak && GFX.level === 'high', powerPreference: 'high-performance' });   // 反鋸齒在內顯上很吃效能
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;   // 陰影由主迴圈依畫質決定多久更新一次
 app.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 900);
@@ -25,10 +47,24 @@ window.addEventListener('resize', resize); resize();
 scene.add(new THREE.HemisphereLight(0xffffff, 0x2a3440, 0.75));
 const sun = new THREE.DirectionalLight(0xffffff, 0.85);
 sun.position.set(25, 60, 20); sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.mapSize.set(4096, 4096);
 Object.assign(sun.shadow.camera, { left: -92, right: 92, top: 58, bottom: -58, near: 1, far: 170 });
 scene.add(sun);
+
+function applyGfx(level, why) {
+  const L = GFX_LEVELS[level]; if (!L) return; GFX.level = level; GFX.lod = L.lod;
+  if (BENCH) return;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, L.pr)); resize();
+  const wasShadow = sun.castShadow, wasSoft = renderer.shadowMap.type === THREE.PCFSoftShadowMap;
+  sun.castShadow = L.shadow > 0;
+  if (L.shadow && sun.shadow.mapSize.x !== L.shadow) { sun.shadow.mapSize.set(L.shadow, L.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+  renderer.shadowMap.type = L.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+  if (wasShadow !== sun.castShadow || wasSoft !== L.soft)                      // 陰影開關、種類改了：材質要重新編譯
+    scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); });
+  renderer.shadowMap.needsUpdate = true;
+  if (why && typeof log === 'function') log(why);
+  const sel = document.getElementById('gfxLevel'); if (sel) sel.value = GFX.pref;
+}
 
 const mat = (color, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.55, metalness: 0.15 }, o));
 function box(w, h, d, color, o) {

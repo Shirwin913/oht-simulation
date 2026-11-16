@@ -103,6 +103,12 @@ $('btnAutoInfo').onclick = () => openInfoCard('auto');
 $('btnHot').onclick = () => { insertHotLot(); updateUI(); };
 $('btnPriInfo').onclick = () => openInfoCard('pri');
 $('btnParkInfo').onclick = () => openInfoCard('park');
+$('gfxLevel').value = GFX.pref;
+$('gfxLevel').onchange = e => {                                         // 畫質：記在這台電腦的瀏覽器裡，下次開也用同樣設定
+  GFX.pref = e.target.value; try { localStorage.setItem('ohtGfx', GFX.pref); } catch (err) {}
+  const lv = GFX.pref === 'auto' ? (GFX.weak ? 'mid' : 'high') : GFX.pref;
+  applyGfx(lv, `🖥 畫質：${GFX.pref === 'auto' ? '自動（' + GFX_LEVELS[lv].name + '）' : GFX_LEVELS[lv].name}`);
+};
 $('btnQtimeInfo').onclick = () => openInfoCard('qtime');
 $('btnDispatchInfo').onclick = () => openInfoCard('dispatch');
 $('btnDirectInfo').onclick = () => openInfoCard('direct');
