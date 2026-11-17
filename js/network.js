@@ -183,10 +183,26 @@ function frameAt(seg, d) {
 // ---------- 天車在軌道網路上的位置工具 ----------
 // 天車位置：v.seg（目前軌道段）、v.d（離段起點距離）、v.prevSeg（上一段）、v.route（之後要走的軌道段）
 // 沿天車前方路線列出接下來的軌道段：[{ seg, off }]，off ＝ 該段起點離天車的距離（第一段為負）
+// Manual selection uses the same next segment for preview, spacing and movement.
+function manualNext(seg, v) {
+  const n = seg.to;
+  if (n.out.length <= 1) return n.out[0] || null;
+  if (v.handSw || v.hf !== v.hr) return null;
+  return v.hf === 'down' ? n.out.find(s => s !== n.def && !s.blocked) || null : n.def && !n.def.blocked ? n.def : null;
+}
+function manualForwardRoom(v) {
+  let room = v.seg.len - v.d, seg = v.seg;
+  while (room < LOOK) {
+    const next = manualNext(seg, v);
+    if (!next || next.blocked) return Math.max(0, room - BOGIE_X - 0.05);
+    seg = next; room += seg.len;
+  }
+  return Infinity;
+}
 function pathAhead(v, maxDist) {
   const out = [{ seg: v.seg, off: -v.d }];
   let off = v.seg.len - v.d, seg = v.seg, i = 0;
-  while (off < maxDist) { seg = i < v.route.length ? v.route[i++] : nextDefault(seg); out.push({ seg, off }); off += seg.len; }
+  while (off < maxDist) { seg = v.manual ? manualNext(seg, v) : i < v.route.length ? v.route[i++] : nextDefault(seg); if (!seg || (v.manual && seg.blocked)) break; out.push({ seg, off }); off += seg.len; }
   return out;
 }
 // 天車前方（off > 0）或後方（off < 0）某距離處的 [段, 段內距離]

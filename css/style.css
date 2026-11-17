@@ -287,3 +287,49 @@ button.ok:hover { background:#166534; }
 #hmi .hdetail aside .estop { width:100%; margin-bottom:8px; }
 @media (max-width:850px) { #hmi .hdetail { grid-template-columns:1fr; } #hmi .da-fields { grid-template-columns:repeat(2,minmax(0,1fr)); } #hmi .da-note { grid-column:span 2; } #hmi .htabs { flex-wrap:wrap; } }
 #alarmCard table.kt { width:100%; border-collapse:collapse; font-size:12px; margin:4px 0; } #alarmCard table.kt th, #alarmCard table.kt td { border:1px solid rgba(148,163,184,.35); padding:3px 5px; text-align:left; vertical-align:top; } #alarmCard table.kt th { background:rgba(148,163,184,.15); }
+
+/* 教學版 GPCAD 風格，不使用實際廠內識別資料 */
+#hmi .gpcad { width:min(1260px,98vw); background:#fff; border:2px solid #39798b; border-radius:2px; }
+#hmi .gpcad .hhead { grid-template-columns:auto 1fr auto auto auto; background:#69abb1; }
+#hmi .gpcad .htool { background:#69abb1; }
+#hmi .gpcad .big { background:#54fa69; border:1px solid #527c82; color:#111; font-size:32px; min-height:62px; }
+#hmi .gpcad .big.alarm { background:#ff0808; color:#111; animation:none; }
+#hmi .gpcad .big.manualstate { background:#fff400; }
+#hmi .gpcad .huser { display:grid; justify-items:center; gap:2px; min-width:90px; }
+#hmi .gpcad .huser button { border-radius:50%; background:#243a93; font-size:22px; padding:6px; }
+#hmi .gpcad .huser span { background:#55fa69; text-align:center; width:100%; border:1px solid #398a50; }
+#hmi .gpcad .htabs { order:6; display:flex; gap:3px; padding:3px; background:#39798b; }
+#hmi .gpcad .htabs button { flex:1; border-radius:0; min-height:48px; border:1px solid #7895a2; }
+#hmi .gpcad .htabs button.cur { background:#56a7ee; color:#111; }
+#hmi .gpcad .hmain { grid-template-columns:1.05fr 1.4fr 1fr; }
+#hmi .gpcad .hbox { border:1px solid #164779; border-radius:2px; }
+#hmi .gpcad .hf b:not(.w) { background:#00eaf5; color:#06438e; }
+#hmi .gpcad .estop { background:#f4ed00 !important; height:240px; }
+#hmi .gpcad .estop span { width:190px; height:190px; font-size:25px; }
+#hmi .gpcad .estop.small { height:auto; }
+#hmi .gpcad .estop.small span { width:90px; height:90px; font-size:15px; }
+#hmi .gpcad .hmsg { color:#c00; }
+#hmi .hloginshade { position:absolute; inset:0; display:grid; place-items:center; background:#142d4019; z-index:8; }
+#hmi .hlogin { width:300px; background:#eee; border:2px solid #889a9c; padding:12px; box-shadow:0 8px 24px #0004; }
+#hmi .hlogin h4 { margin:0 0 12px; text-align:center; font-size:17px; }
+#hmi .hlogin label { display:grid; grid-template-columns:55px 1fr; margin:8px 0; }
+#hmi .hlogin input { min-width:0; }
+#hmi .hlogin > div:last-child { display:flex; gap:5px; }
+#hmi .hlogin button { flex:1; color:#168218; }
+#hmi .hloginerr { color:#b91c1c; min-height:18px; }
+#hmi .hrecordlayout { display:grid; grid-template-columns:minmax(0,3fr) minmax(210px,1fr); gap:8px; }
+#hmi .hrecords { display:flex; flex-direction:column; height:clamp(220px,48vh,440px); min-width:0; min-height:0; overflow:hidden; }
+#hmi .hrecords .eventscroll { flex:1 1 0; min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+#hmi .hrecords .hrecordtools, #hmi .hrecords .eventpages { flex:0 0 auto; }
+#hmi .hrecords table { width:100%; }
+#hmi .hrecords th { z-index:1; }
+#hmi .hrecordtools { display:flex; align-items:center; gap:10px; padding:8px; background:#edf0f2; }
+#hmi .hrecordtools b { margin-right:auto; background:#fff982; padding:8px; }
+#hmi .hrecords table { background:#e2e2e2; }
+#hmi .hrecords th,#hmi .hrecords td { border:1px solid #808b91; padding:6px; white-space:normal; }
+#hmi .hrecords th { background:#fff; position:sticky; top:0; }
+#hmi .hrecords tr:first-child td { background:#fffec4; }
+#hmi .hrecords .alarmrow { color:#9e1414; }
+@media(max-width:900px){#hmi .gpcad .hmain,#hmi .hrecordlayout {grid-template-columns:1fr;} #hmi .gpcad .hhead {grid-template-columns:repeat(2,minmax(0,1fr));} }
+
+#hmi .hrecordtools {flex-wrap:wrap;} #hmi .hrecordtools input {width:120px; min-width:0;} #hmi .eventpages {display:flex;align-items:center;gap:8px;padding:6px;}

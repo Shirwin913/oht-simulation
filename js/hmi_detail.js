@@ -34,6 +34,7 @@ function detailRead(v, ax) {
     }
     values[k] = value;
   }
+  if (Object.keys(values).some(k=>values[k]!==v.detailParams[ax][k])) eventAdd(v,'修改',`${AXIS_NAME[ax]}：${JSON.stringify(v.detailParams[ax])} → ${JSON.stringify(values)}`);
   v.detailParams[ax] = values; return values;
 }
 function detailAct(v, act) {
@@ -63,11 +64,15 @@ function detailTick(v, dt) {
   const prev = m.speed;
   m.speed += Math.sign(targetSpeed - m.speed) * Math.min(Math.abs(targetSpeed - m.speed), (targetSpeed > m.speed ? m.accel : m.decel) * dt);
   let step = Math.min(m.remaining, (prev + m.speed) * 0.5 * dt);
-  if (m.ax === 'walk') {
+  if (m.ax === 'walk' && m.dir < 0) {
+    const room = manualRearRoom(v);
+    if (room + 1e-9 < Math.min(m.remaining, Math.max(step, m.speed * m.speed / (2 * m.decel)))) { detailStop(v, '後方車距不足或已達倒車界限'); if (v === hmiV) hmiMsg('後方車距不足或已達倒車界限'); return; }
+    step = manualReverse(v, step);
+  } else if (m.ax === 'walk') {
     const {gap, lead} = leaderInfo(v, pathAhead(v, LOOK));
     // 詳細操作遇到前車即停止，不自行越過路權或推動其他車。
-    if (gap - MIN_GAP - 0.05 < Math.max(step, m.speed * m.speed / (2 * m.decel))) {
-      detailStop(v, '前方有車，已停止'); if (v === hmiV) hmiMsg('前方有車，詳細走行已停止'); return;
+    if (Math.min(manualForwardRoom(v), gap - MIN_GAP - 0.05) < Math.max(step, m.speed * m.speed / (2 * m.decel))) {
+      detailStop(v, '前方車距或分岔互鎖，已停止'); if (v === hmiV) hmiMsg('前方車距或分岔互鎖，詳細走行已停止'); return;
     }
     advance(v, step); v.odo += step;
     if (a && a.codeCleared) { a.jogDist = (a.jogDist || 0) + step; if (a.jogDist >= 0.3) a.jogged = true; }
@@ -86,11 +91,11 @@ function renderDetail(v, d) {
     return `<section class="detail-axis"><div class="da-title"><h5>${AXIS_NAME[ax]}</h5><button class="svl ${v.servo[ax] ? 'on' : 'off'}" data-a="servo:${ax}:${v.servo[ax] ? 'off' : 'on'}">伺服 ${v.servo[ax] ? 'On' : 'Off'}</button><span class="done ${busy ? '' : 'ok'}">${busy ? '動作中' : v.detailStatus[ax] || (ax === 'rot' ? '固定軸' : '待命')}</span></div>
     <div class="da-fields">${p ? param('speed','速度 (mm/s)') + param('distance','移動量 (mm)') + param('accel','加速度 (mm/s²)') + param('decel','減速度 (mm/s²)') : `<div class="da-note">${ax === 'rot' ? '本機型旋轉軸固定，僅顯示角度。' : '夾爪使用開／閉極限控制；位置以行程百分比表示。'}</div>`}
     <label>目前位置 (${ax === 'rot' ? 'rad' : ax === 'claw' ? '%' : 'mm'})<output>${f1(detailPosition(v,ax))}</output></label><label>目前速度 (${ax === 'rot' ? 'rad/s' : ax === 'claw' ? '%/s' : 'mm/s'})<output>${f1(speed)}</output></label><label>異常碼<output class="da-code ${code !== '0' ? 'bad' : ''}">${code}</output></label></div>
-    <div class="da-actions">${p ? [-1,1].map(dir => `<button data-a="detail:move:${ax}:${dir}" ${active || (ax === 'walk' && dir < 0) ? 'disabled' : ''}>${dirs[ax][dir > 0 ? 1 : 0]}指定量</button>`).join('') : ax === 'claw' ? '<button data-a="claw:open">開極限</button><button data-a="claw:close">閉極限</button>' : '<button disabled>旋轉固定</button>'}
+    <div class="da-actions">${p ? [-1,1].map(dir => `<button data-a="detail:move:${ax}:${dir}" ${active ? 'disabled' : ''}>${dirs[ax][dir > 0 ? 1 : 0]}指定量</button>`).join('') : ax === 'claw' ? '<button data-a="claw:open">開極限</button><button data-a="claw:close">閉極限</button>' : '<button disabled>旋轉固定</button>'}
     ${['hoist','shift'].includes(ax) ? `<button data-a="home:${ax}">回原點</button>` : ''}<button data-a="${busy ? 'detail:stop:' + ax : 'stop'}">停止</button></div></section>`;
   }).join('');
   const io = [['FOUP 在席', !!v.carry],['夾爪開極限',v.claw < .01],['夾爪閉極限',v.claw > .99],['捲揚原點',v.hoist < .005],['側移原點',Math.abs(v.shift)<.002],['防墜伸出',v.guard < .01],['防墜收合',v.guard > .99],['控制系統連線',commOk(v)],['緊急停止',!!v.estop]];
-  return `<div class="detail-note">相對移動：輸入參數後按方向鍵，執行指定距離。走行只支援單向前進；參數僅套用本車手動命令。位置與速度來自模擬。</div><div class="hdetail"><div>${axes}</div><aside><div class="hbox"><h5>台車目前位置</h5>${fld('Barcode',d.barcode)}${fld('Encoder',d.enc)}${fld('X 座標 (mm)',d.x)}${fld('Y 座標 (mm)',d.y)}${fld('Section ID',d.sect)}${fld('Address ID',d.addr)}</div><div class="hbox"><h5>山形上下手</h5><table class="axt">${handRows(v)}</table><h5>防墜</h5><button data-a="guard:out">伸出</button> <button data-a="guard:in">收合</button></div><div class="hbox"><h5>I/O 狀態</h5><div class="detail-io">${io.map(([n,on])=>`<div class="${on?'on':''}"><span>${n}</span><b>${on?'ON':'OFF'}</b></div>`).join('')}</div>${e84Panel(v)}</div><button class="estop ${v.estop?'on':''}" data-a="estop"><span>${v.estop?'解除急停':'EMERGENCY STOP'}</span></button>${recoveryBox(v,a)}</aside></div>`;
+  return `<div class="detail-note">相對移動：輸入參數後按方向鍵，執行指定距離。手動走行支援前進及後退（後退限目前軌道段）；參數僅套用本車手動命令。位置與速度來自模擬。</div><div class="hdetail"><div>${axes}</div><aside><div class="hbox"><h5>台車目前位置</h5>${fld('Barcode',d.barcode)}${fld('Encoder',d.enc)}${fld('X 座標 (mm)',d.x)}${fld('Y 座標 (mm)',d.y)}${fld('Section ID',d.sect)}${fld('Address ID',d.addr)}</div><div class="hbox"><h5>山形上下手</h5><table class="axt">${handRows(v)}</table><h5>防墜</h5><button data-a="guard:out">伸出</button> <button data-a="guard:in">收合</button></div><div class="hbox"><h5>I/O 狀態</h5><div class="detail-io">${io.map(([n,on])=>`<div class="${on?'on':''}"><span>${n}</span><b>${on?'ON':'OFF'}</b></div>`).join('')}</div>${e84Panel(v)}</div><button class="estop ${v.estop?'on':''}" data-a="estop"><span>${v.estop?'解除急停':'EMERGENCY STOP'}</span></button>${recoveryBox(v,a)}</aside></div>`;
 }
 // 編輯時保留草稿，避免定時重畫吃掉輸入或失去焦點。
 document.getElementById('hmi').addEventListener('input', e => {

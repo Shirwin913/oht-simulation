@@ -50,9 +50,43 @@ const AXIS_OF_CODE = { 'E-204': 'hoist', 'E-101': 'walk', 'E-102': 'walk', 'E-10
 const ON_HOME = (v) => v.hoist < 0.005 && Math.abs(v.shift) < 0.002;
 
 // 異常發生時：有些異常會讓伺服跳脫（alarms.js 的 raiseAlarm 會呼叫）
+const hmiProtectedTab = tab => tab === 'quick' || tab === 'detail';
+const hmiAllowedTab = tab => !hmiProtectedTab(tab) || !!hmiUser;
+let hmiUser = '', hmiLoginOpen = false, hmiLoginError = '', hmiLoginRefresh = false, hmiLogFilter = 'all';
+function hmiHistory(v, level, code, title, alarmId) {
+  eventAdd(v, '警報', `${code}：${title}`, {level, alarmId, end:null});
+}
+function hmiHistoryEnd(a) {
+  for (const r of a.target.eventJournal || []) if (r.alarmId === a.id && r.end === null) r.end = simTime;
+}
+function hmiRecords(v) {
+  const rows = eventFiltered(v), pages = Math.max(1,Math.ceil(rows.length/EVENT_PAGE)); eventPage=Math.min(eventPage,pages-1);
+  const e=eventEscape;
+  return `<div class="hrecords"><div class="hrecordtools"><b>系統紀錄 ${e(v.id)}</b><select id="hmiLogFilter">${[['all','全部'],...EVENT_TYPES.slice(1).map(x=>[x,x]),['Alarm','Alarm'],['Warning','Warning']].map(([k,n])=>`<option value="${k}" ${hmiLogFilter===k?'selected':''}>${n}</option>`).join('')}</select><input id="eventQuery" placeholder="關鍵字／異常代碼" value="${e(eventQuery)}"><input id="eventFrom" placeholder="起始 HH:MM:SS" value="${e(eventFrom)}"><input id="eventTo" placeholder="結束 HH:MM:SS" value="${e(eventTo)}"><button data-a="event:search">搜尋</button><button data-a="event:csv">CSV</button><button data-a="event:log">LOG</button></div><div class="eventscroll" tabindex="0" aria-label="系統紀錄列表"><table><thead><tr><th>模擬時間</th><th>類型／等級</th><th>說明</th><th>結束時間</th></tr></thead><tbody>${rows.slice(eventPage*EVENT_PAGE,(eventPage+1)*EVENT_PAGE).map(r=>`<tr class="${r.level==='Alarm'?'alarmrow':''}"><td>${fmt(r.time)}</td><td>${e(r.level||r.type)}</td><td>${e(r.message)}</td><td>${r.end===null?'未結束':r.end===undefined?'—':fmt(r.end)}</td></tr>`).join('')||'<tr><td colspan="4">沒有符合條件的紀錄</td></tr>'}</tbody></table></div><div class="eventpages"><button data-a="event:prev" ${eventPage===0?'disabled':''}>上一頁</button> ${eventPage+1} / ${pages} 頁・${rows.length} 筆 <button data-a="event:next" ${eventPage+1>=pages?'disabled':''}>下一頁</button></div></div>`;
+}
+// 教學帳號：容許大小寫、全形字元及首尾空白。
+function hmiCredential(value) {
+  return String(value ?? '').normalize('NFKC').trim().toUpperCase();
+}
+function hmiLoginAction(act) {
+  if (act === 'login') { hmiLoginOpen = true; hmiLoginError = ''; }
+  if (act === 'login:cancel') hmiLoginOpen = false;
+  if (act === 'login:logout') { if (hmiV && hmiV.detailMove) detailStop(hmiV, '登出，動作停止'); eventAdd(hmiV,'操作',`人員登出：${hmiUser||'No User'}`); hmiUser = ''; hmiLoginOpen = false; hmiTab = 'main'; }
+  if (act === 'login:submit') {
+    const u = document.getElementById('hmiAccount'), p = document.getElementById('hmiPassword');
+    if (hmiCredential(u?.value) === 'CIM' && hmiCredential(p?.value) === 'CIM') { eventAdd(hmiV,'操作','人員登入成功：CIM'); hmiUser = 'CIM'; hmiLoginOpen = false; hmiLoginError = ''; }
+    else { eventAdd(hmiV,'操作','人員登入失敗'); hmiLoginError = '帳號或密碼不正確，請輸入 CIM / CIM'; }
+  }
+  if (document.activeElement) document.activeElement.blur();
+  hmiHold = false; hmiLoginRefresh = true; renderHmi(); hmiLoginRefresh = false;
+}
+function hmiLoginDialog() {
+  return hmiLoginOpen ? `<div class="hloginshade"><div class="hlogin" role="dialog" aria-label="人員登入"><h4>人員登入</h4><label>帳號 <input id="hmiAccount" autocomplete="off" autocapitalize="characters" spellcheck="false"></label><label>密碼 <input id="hmiPassword" type="password" autocomplete="off"></label><small>教學帳號：CIM / CIM</small><div class="hloginerr">${hmiLoginError}</div><div><button data-a="login:logout">登出</button><button data-a="login:cancel">取消</button><button data-a="login:submit">登入</button></div></div></div>` : '';
+}
 function hmiOnAlarm(a) {
   if (a.type !== 'vehicle' && a.type !== 'transfer') return;
   const v = a.target; hmiInit(v);
+  hmiHistory(v, 'Alarm', a.info.code, a.info.title, a.id);
   if (a.info.code === 'E-101') v.servo.walk = false;
   if (a.info.code === 'E-203') v.servo.hoist = false;
 }
@@ -130,7 +164,6 @@ const HOLD_SPD = { walk: 0.3, hoist: 0.45, shift: 0.3 };
 const HOLD_NAME = { walk: ['後退', '前進'], hoist: ['上升', '下降'], shift: ['右移', '左移'], rot: ['右旋', '左旋'] };
 function holdBlock(v, ax, dir) {                                         // 回傳擋下來的原因；可以動就回傳 null
   if (ax === 'walk') {
-    if (dir < 0) return '教學版只開放「前進」寸動（軌道是單向的）';
     if (!ON_HOME(v)) return '捲揚／側移不在原點，禁止走行（會撞到東西）';
     if (v.guard > 0.01 && v.carry) return '有貨時防墜要先「伸出」才能走行';
   }
@@ -150,18 +183,35 @@ function holdBlock(v, ax, dir) {                                         // 回�
 // 寸動時前面是休息中的空車：跟自動行駛一樣「推」它往前讓路
 function pushParked(v, lead) { if (!lead || !(lead.parked || lead.pushT > 0) || lead.fault || lead.manual) return false; lead.pushT = 3; lead.pushedBy = v.id; return true; }
 function hmiHoldStart(v, ax, dir) {
+  if (!hmiUser) return hmiMsg('請先登入人員帳號');
   hmiInit(v); if (!needManual(v, ax)) return;
   const why = holdBlock(v, ax, dir); if (why) return hmiMsg(why);
   if (ax === 'walk') v.man.jog = 0; else delete v.man[ax];
-  v.man.hold = { ax, dir }; v.manTouched = true;
+  eventAdd(v,'操作',`寸動命令：${AXIS_NAME[ax]} ${dir}`); v.man.hold = { ax, dir }; v.manTouched = true;
   hmiMsg(`${AXIS_NAME[ax]}${HOLD_NAME[ax][dir > 0 ? 1 : 0]}中（按住移動，放開停止）`);
+}
+// 手動倒車僅限當前軌道段，避免未確認的分岔與匯流路權。
+function manualRearRoom(v) {
+  let room = Math.max(0, v.d - VLEN / 2 - MIN_GAP);
+  for (const u of vehicles) if (u !== v && u.seg === v.seg && u.d <= v.d)
+    room = Math.min(room, Math.max(0, v.d - u.d - VLEN - MIN_GAP - 0.05));
+  // 停在前一段（包含每一條匯流進來的軌道）尾端的車：車身可能已經靠近這段起點，也要保持車距
+  for (const s of v.seg.from.in) for (const u of vehicles) if (u !== v && u.seg === s)
+    room = Math.min(room, Math.max(0, v.d + (s.len - u.d) - VLEN - MIN_GAP - 0.05));
+  return room;
+}
+function manualReverse(v, distance) {
+  const mv = Math.min(distance, manualRearRoom(v));
+  advance(v, -mv); v.odo = (v.odo || 0) - mv;
+  return mv;
 }
 function holdStep(v, h, dt) {
   const why = holdBlock(v, h.ax, h.dir); if (why) { hmiMsg(why); return false; }
   const step = HOLD_SPD[h.ax] * dt;
   if (h.ax === 'walk') {
-    const { gap, lead } = leaderInfo(v, pathAhead(v, LOOK)), mv = Math.min(step, Math.max(0, gap - MIN_GAP - 0.05));
-    if (mv <= 0) { if (pushParked(v, lead)) return true; hmiMsg('前方有車，寸動停止'); return false; }
+    if (h.dir < 0) { if (manualReverse(v, step) <= 1e-9) { hmiMsg('後方車距不足或已達軌道段倒車界限'); return false; } return true; }
+    const { gap, lead } = leaderInfo(v, pathAhead(v, LOOK)), mv = Math.min(step, manualForwardRoom(v), Math.max(0, gap - MIN_GAP - 0.05));
+    if (mv <= 0) { if (manualForwardRoom(v) <= 0) { hmiMsg("分岔互鎖：確認前後手一致、換手完成及軌道可通行"); return false; } if (pushParked(v, lead)) return true; hmiMsg('前方有車，寸動停止'); return false; }
     advance(v, mv); v.odo += mv;
     const a = vAlarm(v); if (a && a.codeCleared) { a.jogDist = (a.jogDist || 0) + mv; if (a.jogDist >= 0.3) a.jogged = true; }
   } else if (h.ax === 'hoist') { v.hoist = Math.max(0, Math.min(H - 1.2, v.hoist + h.dir * step)); v.hv = 0; }
@@ -190,10 +240,17 @@ function hmiTick(dt) {
     if (m.guard !== undefined) { v.guard = mv(v.guard, m.guard, 1 / GUARD_TIME); if (v.guard === m.guard) delete m.guard; }
     if (m.claw !== undefined) { v.claw = mv(v.claw, m.claw, 1 / CLAW_TIME); if (v.claw === m.claw) delete m.claw; }
     if (m.hold && !holdStep(v, m.hold, dt)) m.hold = null;
+    if (m.jog < 0) {
+      const why = holdBlock(v, 'walk', -1);
+      const step = why || !v.servo.walk ? 0 : manualReverse(v, Math.min(-m.jog, 0.3 * dt));
+      if (step <= 1e-9) { m.jog = 0; hmiMsg(why || '後方車距不足、伺服 Off 或已達倒車界限'); }
+      else m.jog = Math.min(0, m.jog + step);
+    }
     if (m.jog > 0) {                                                     // 走行寸動：慢慢往前，前車太近就停
       const { gap, lead } = leaderInfo(v, pathAhead(v, LOOK));
-      const step = Math.min(m.jog, 0.3 * dt, Math.max(0, gap - MIN_GAP - 0.05));
-      if (step <= 0 && pushParked(v, lead)) { /* 前面是休息中的空車：叫它往前讓 */ }
+      const step = Math.min(m.jog, 0.3 * dt, manualForwardRoom(v), Math.max(0, gap - MIN_GAP - 0.05));
+      if (step <= 0 && manualForwardRoom(v) <= 0) { m.jog = 0; hmiMsg("分岔互鎖：確認換手及軌道狀態"); }
+      else if (step <= 0 && pushParked(v, lead)) { /* 前面是休息中的空車：叫它往前讓 */ }
       else if (step <= 0) { m.jog = 0; hmiMsg('前方有車，寸動停止'); }
       else { advance(v, step); v.odo += step; m.jog -= step; const a = vAlarm(v); if (a && a.codeCleared) { a.jogDist = (a.jogDist || 0) + step; if (a.jogDist >= 0.3) a.jogged = true; } }
     }
@@ -266,6 +323,10 @@ function needManual(v, axis) {
 }
 function hmiAct(act) {
   const v = hmiV; if (!v) return; hmiInit(v);
+  if (act.startsWith('event:')) { const k=act.split(':')[1]; if(k==='search'){eventQuery=document.getElementById('eventQuery').value.trim();eventFrom=document.getElementById('eventFrom').value.trim();eventTo=document.getElementById('eventTo').value.trim();if((eventFrom&&eventTime(eventFrom)===null)||(eventTo&&eventTime(eventTo)===null))return alert('時間格式請使用 HH:MM:SS');eventPage=0;} if(k==='prev')eventPage=Math.max(0,eventPage-1);if(k==='next')eventPage++;if(k==='csv'||k==='log')eventExport(v,k==='csv'); document.activeElement?.blur(); return renderHmi(); }
+  if (act === 'login' || act.startsWith('login:')) return hmiLoginAction(act);
+  if (!hmiUser && !['find','stop'].includes(act) && !(act === 'estop' && !v.estop)) return hmiMsg('請先登入人員帳號');
+  if (act !== 'find') eventAdd(v,'操作',`人員命令請求：${act}（${hmiUser||'No User'}）`);
   if (act.startsWith('detail:')) return detailAct(v, act);
   if (v.detailMove) {
     if (['stop', 'estop'].includes(act) || act.includes(':off')) detailStop(v, '已停止');
@@ -283,7 +344,7 @@ function hmiAct(act) {
       if (a.autoRec) return hmiMsg('天車正在自動復歸，請等它結果（自動復歸失敗才需要人工）');
       if (v.estop) return hmiMsg('緊急停止還沒解除，警報清不掉');
       if (recList(a)[0] === 'confirm' && !a.confirmed) return hmiMsg('請先確認現場安全（排除步驟第 1 項按「確認」）');
-      a.codeCleared = true; v.manual = true; v.v = 0;
+      eventAdd(v,'操作',`警報清除：${a.info.code}`); hmiHistoryEnd(a); a.codeCleared = true; v.manual = true; v.v = 0;
       log(`🛠 ${v.id} 警報清除（${a.info.code}），天車切手動`); return hmiMsg('異常碼已清除，天車已切成手動。依照排除步驟繼續');
     case 'confirm': if (a) { a.confirmed = true; hmiMsg('已確認現場安全'); } return;
     case 'estop':
@@ -316,8 +377,7 @@ function hmiAct(act) {
       if (ax === 'walk') {
         if (!ON_HOME(v)) return hmiMsg('捲揚／側移不在原點，禁止走行（會撞到東西）');
         if (v.guard > 0.01 && v.carry) return hmiMsg('有貨時防墜要先「伸出」才能走行');
-        if (dir < 0) return hmiMsg('教學版只開放「前進」寸動（軌道是單向的）');
-        v.man.jog = (v.man.jog || 0) + 0.5; return hmiMsg('走行寸動前進 0.5 m');
+        v.man.jog = (Math.sign(v.man.jog || 0) === dir ? v.man.jog : 0) + dir * 0.5; return hmiMsg(`走行寸動${dir < 0 ? '後退' : '前進'} 0.5 m`);
       }
       if (ax === 'hoist') {
         if (Math.abs(v.shift) > 0.002 && Math.abs(v.shift) < STB_OFFSET - 0.01) return hmiMsg('側移在半途，捲揚不能動');
@@ -405,6 +465,7 @@ function hmiAuto(v, a) {
       else v.state = 'guardOpen';
     }
   }
+  if (v.target) { const target = v.target; const plan = planRoute(v, target.seg, target.d); if (plan.route === null) return hmiMsg('無法重新規劃自動路線'); v.route = plan.route; } else v.route = [];
   v.manual = false; v.manTouched = false; v.man = {};
   log(`🛠 ${v.id} 切自動，恢復運行${transferring ? '（重新執行取放貨）' : ''}`);
   hmiMsg('已切自動，天車恢復運行 ✔');
@@ -412,10 +473,10 @@ function hmiAuto(v, a) {
 
 // ---------- 畫面 ----------
 function openHmi(v, tab) {
-  hmiV = v || hmiV || vehicles[0]; hmiInit(hmiV); if (tab) hmiTab = tab;
+  hmiV = v || hmiV || vehicles[0]; hmiInit(hmiV); hmiTab = hmiAllowedTab(tab) ? (tab || 'main') : 'main'; hmiLoginOpen = false;
   document.getElementById('hmi').style.display = 'flex'; hmiMsgText = ''; renderHmi();
 }
-function closeHmi() { if (hmiV && hmiV.detailMove) detailStop(hmiV, '視窗已關閉，動作停止'); document.getElementById('hmi').style.display = 'none'; hmiV = null; }
+function closeHmi() { hmiLoginOpen = false; if (hmiV && hmiV.detailMove) detailStop(hmiV, '視窗已關閉，動作停止'); document.getElementById('hmi').style.display = 'none'; hmiV = null; }
 const f1 = x => (Math.round(x * 10) / 10).toFixed(1);
 function hmiData(v) {
   const p = v.group.position, a = vAlarm(v), j = v.job;
@@ -434,7 +495,7 @@ const fld = (label, val, cls = '') => `<div class="hf"><span>${label}</span><b c
 const holdBtns = (v, ax, list) => list.map(([d, n]) => `<button class="hold ${v.man && v.man.hold && v.man.hold.ax === ax && v.man.hold.dir === d ? 'holding' : ''}" data-hold="${ax}:${d}" data-a="jog:${ax}:${d}" title="按住移動，放開停止">${n}</button>`).join('');
 function axisRow(v, ax, name, pos, spd, code, btns) {
   const hk = v.homing && v.homing.q[0] && v.homing.q[0].k;
-  const busy = (v.man && ((ax === 'walk' && v.man.jog > 0) || v.man[ax] !== undefined || (v.man.hold && v.man.hold.ax === ax))) || hk === ax || (ax === 'walk' && hk === 'enc');
+  const busy = (v.man && ((ax === 'walk' && !!v.man.jog) || v.man[ax] !== undefined || (v.man.hold && v.man.hold.ax === ax))) || hk === ax || (ax === 'walk' && hk === 'enc');
   return `<tr><th>${name}</th>
     <td><button class="svl ${v.servo[ax] ? 'on' : 'off'}" data-a="servo:${ax}:${v.servo[ax] ? 'off' : 'on'}" title="伺服：正常是綠色 On；只有這一軸伺服異常（跳脫）才會自己變紅色 Off，清完警報再按 On">${v.servo[ax] ? 'On' : 'Off'}</button></td>
     <td class="num">${pos}</td><td class="num">${spd}</td><td><b class="code ${code !== '0' ? 'bad' : ''}">${code}</b></td>
@@ -454,13 +515,48 @@ function vehicleSvg(d, v) {
     ${v.carry ? `<rect x="${133 + v.shift * 30}" y="${104 + Math.min(70, v.hoist * 25)}" width="44" height="34" rx="4" fill="#64748b"/>` : ''}
     ${man}${warn}${wifi}${gear}</svg>`;
 }
+// 更新既有 DOM，保留按鈕、滑鼠 hover、捲動與展開狀態。
+function patchHmiNode(oldNode, fresh) {
+  if (oldNode.nodeType !== fresh.nodeType || oldNode.nodeName !== fresh.nodeName ||
+      (oldNode.nodeType === 1 && ['id', 'data-a', 'data-tab', 'data-hold'].some(k => oldNode.getAttribute(k) !== fresh.getAttribute(k)))) {
+    oldNode.replaceWith(fresh.cloneNode(true)); return;
+  }
+  if (oldNode.nodeType !== 1) {
+    if (oldNode.nodeValue !== fresh.nodeValue) oldNode.nodeValue = fresh.nodeValue;
+    return;
+  }
+  const keepOpen = oldNode.tagName === 'DETAILS';
+  for (const a of Array.from(oldNode.attributes)) {
+    if (!(keepOpen && a.name === 'open') && !fresh.hasAttribute(a.name)) oldNode.removeAttribute(a.name);
+  }
+  for (const a of Array.from(fresh.attributes)) {
+    if (!(keepOpen && a.name === 'open') && oldNode.getAttribute(a.name) !== a.value) oldNode.setAttribute(a.name, a.value);
+  }
+  patchHmiChildren(oldNode, fresh);
+  if (oldNode.tagName === 'SELECT' && oldNode.value !== fresh.value) oldNode.value = fresh.value;
+}
+function patchHmiChildren(parent, fresh) {
+  const nodes = Array.from(fresh.childNodes);
+  for (let i = 0; i < nodes.length; i++) {
+    if (parent.childNodes[i]) patchHmiNode(parent.childNodes[i], nodes[i]);
+    else parent.appendChild(nodes[i].cloneNode(true));
+  }
+  while (parent.childNodes.length > nodes.length) parent.lastChild.remove();
+}
+function patchHmiMarkup(el, html) {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  patchHmiChildren(el, template.content);
+}
 function renderHmi() {
   const el = document.getElementById('hmi'); if (!el || el.style.display === 'none' || !hmiV) return;
-  if (hmiHold || (document.activeElement && document.activeElement.closest('#hmi input, #hmi select'))) return;
+  if (hmiLoginOpen && el.querySelector('.hlogin') && !hmiLoginRefresh) return;
+  if (!hmiLoginRefresh && (hmiHold || (document.activeElement && document.activeElement.closest('#hmi input, #hmi select')))) return;
   const v = hmiV; if (!vehicles.includes(v)) return closeHmi();
   const d = hmiData(v), a = d.a, t = Math.floor(simTime);
   const time = `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
   const sel = `<select id="hmiSel">${vehicles.map(u => `<option ${u === v ? 'selected' : ''}>${u.id}</option>`).join('')}</select>`;
+  if (!hmiAllowedTab(hmiTab)) hmiTab = 'main';
   let body = '';
   if (hmiTab === 'main') {
     body = `<div class="hmain"><div class="hbox"><h5>天車上位命令狀態</h5>${fld('上位命令 ID', d.cmd)}${fld('狀態', d.status, 'w')}${fld('步驟', d.step, 'w')}${fld('模式', d.mode, v.manual ? 'w red' : 'w red')}
@@ -469,6 +565,8 @@ function renderHmi() {
       <div class="hpic">${vehicleSvg(d, v)}</div>
       <div class="hcol"><button class="estop ${v.estop ? 'on' : ''}" data-a="estop"><span>${v.estop ? '解除急停' : 'EMERGENCY STOP'}</span></button>
       <div class="hbox"><h5>天車實際運行資訊</h5>${fld('軟體版本', '教學版 1.0')}${fld('Barcode', d.barcode)}${fld('Encoder', d.enc)}${fld('X 座標', d.x)}${fld('Y 座標', d.y)}${fld('Section ID', d.sect)}${fld('Address ID', d.addr)}${fld(COMM_MODE === 'mesh' ? 'Mesh 連線' : '連線 AP', v.ap ? (COMM_MODE === 'mesh' ? `${v.ap.id}（${v.meshHops} 跳、${Math.round(v.meshLat || 0)} ms）` : v.ap.id) : '—')}</div></div></div>`;
+   } else if (hmiTab === 'records') {
+    body = `<div class="hrecordlayout">${hmiRecords(v)}<div class="hcol"><button class="estop ${v.estop?'on':''}" data-a="estop"><span>${v.estop?'解除急停':'EMERGENCY STOP'}</span></button><div class="hbox"><h5>天車實際運行資訊</h5>${fld('Barcode',d.barcode)}${fld('Encoder',d.enc)}${fld('Section ID',d.sect)}${fld('Address ID',d.addr)}</div></div></div>`;
   } else if (hmiTab === 'detail') {
     body = renderDetail(v, d);
   } else if (hmiTab === 'quick') {
@@ -488,15 +586,15 @@ function renderHmi() {
       <details class="iod"><summary>I/O 感測器</summary><div class="io">${io.map(([n, on]) => `<div class="${on ? 'on' : ''}"><span>${n}</span></div>`).join('')}</div></details></div>
       <div class="hcol">${recoveryBox(v, a)}<button class="estop small ${v.estop ? 'on' : ''}" data-a="estop"><span>${v.estop ? '解除急停' : 'E-STOP'}</span></button></div></div>`;
   } else body = `<div class="hempty">教學版沒有開放這個畫面。現場異常排除請用「快速操作」。</div>`;
-  const tabs = [['main', '主畫面'], ['quick', '快速操作（異常排除）'], ['detail', '詳細操作']];
-  el.innerHTML = `<div class="hwin" style="${hmiPos ? `left:${hmiPos[0]};top:${hmiPos[1]};transform:none` : ''}"><div class="hhead">
+  const tabs = [['main', '主畫面'], ['quick', '快速操作（異常排除）'], ['detail', '詳細操作'], ['records', '系統紀錄']].filter(([k]) => hmiAllowedTab(k));
+  patchHmiMarkup(el, `<div class="hwin gpcad" style="${hmiPos ? `left:${hmiPos[0]};top:${hmiPos[1]};transform:none` : ''}"><div class="hhead">
       <div class="hid">車號 <b class="no">${v.id}</b>${sel}</div>
-      <div class="big ${a ? 'alarm' : ''}">${d.status}</div>
+      <div class="big ${a && !a.codeCleared ? 'alarm' : v.manual ? 'manualstate' : ''}">${a && !a.codeCleared ? '異常' : v.manual && !v.homing ? '手動待機' : d.status}</div>
       <div class="lamps">
         <div class="lamp ${v.homing ? 'blinkL' : ON_HOME(v) ? '' : 'dim'}" title="指示燈：全軸在原點時亮綠燈；歸原點中閃爍">原點</div>
         <div class="lamp ${v.handSw ? 'blinkL man' : v.manual ? 'man' : ''}" title="指示燈：山形上手／下手（黃＝手動模式）">${v.handSw ? '換手中' : handLamp(v)}</div>
         <div class="lamp ${commOk(v) ? '' : 'off'}" title="指示燈：跟控制系統連線正常時亮綠燈">連線</div></div>
-      <button class="hclose" id="hmiClose" title="關閉">✕</button></div>
+      <div class="huser"><button data-a="login" title="人員登入">👤🔒</button><span>${hmiUser || 'No User'}</span></div><button class="hclose" id="hmiClose" title="關閉">✕</button></div>
     <div class="htool">
       <span class="tg">模式</span><button data-a="manual" ${v.manual ? 'disabled' : ''}>天車切手動</button><button data-a="auto" ${!v.manual && !a ? 'disabled' : ''}>天車切自動</button>
       <span class="sep"></span><span class="tg">線上</span><button data-a="offline" ${v.offline ? 'disabled' : ''}>下線</button><button data-a="online" ${v.offline || v.manual || a ? '' : 'disabled'}>上線</button>
@@ -505,7 +603,7 @@ function renderHmi() {
     <div class="htabs">${tabs.map(([k, n]) => `<button data-tab="${k}" class="${hmiTab === k ? 'cur' : ''}">${n}</button>`).join('')}</div>
     <div class="hbody">${body}</div>
     <div class="hmsg"><span>🔔</span><div>${v.homing ? `⟳ 歸原點中（${v.homing.i + 1}／${v.homing.n}）：${v.homing.label || ''}` : hmiMsgText || (a ? `${a.info.code} ${a.info.title}` : '')}</div><button data-a="clear" class="aclr">警報清除</button></div>
-    </div>`;
+    ${hmiLoginDialog()}</div>`);
 }
 // 事件綁在外框上（畫面每 0.25 秒重畫，按鈕會換新）；滑鼠按著或下拉選單打開時先不重畫，免得按不到
 let hmiHold = false, hmiPos = null;
@@ -513,10 +611,15 @@ let hmiHold = false, hmiPos = null;
   const el = document.getElementById('hmi');
   el.addEventListener('pointerdown', () => { hmiHold = true; });
   window.addEventListener('pointerup', () => { if (hmiHold) setTimeout(() => { hmiHold = false; }, 50); });
+  el.addEventListener('keydown', e => {
+    if (hmiLoginOpen && e.key === 'Enter' && !e.isComposing && e.target.closest('.hlogin input')) {
+      e.preventDefault(); e.stopPropagation(); hmiLoginAction('login:submit');
+    }
+  });
   el.addEventListener('click', e => {
     const b = e.target.closest('[data-a],[data-tab],#hmiClose'); if (!b || b.disabled) return;
     if (b.id === 'hmiClose') return closeHmi();
-    if (b.dataset.tab) { hmiTab = b.dataset.tab; hmiHold = false; return renderHmi(); }
+    if (b.dataset.tab) { if (!hmiAllowedTab(b.dataset.tab)) return; hmiTab = b.dataset.tab; hmiHold = false; return renderHmi(); }
     if (b.dataset.hold && e.detail > 0) return;                         // 真的滑鼠點：已經由按住／放開處理
     hmiHold = false; hmiAct(b.dataset.a);
   });
@@ -532,7 +635,7 @@ let hmiHold = false, hmiPos = null;
   el.addEventListener('pointerdown', e => { if (e.target.closest('.hhead') && !e.target.closest('button,select')) { const w = el.querySelector('.hwin').getBoundingClientRect(); drag = [e.clientX - w.left, e.clientY - w.top]; } });
   window.addEventListener('pointermove', e => { if (!drag) return; const w = el.querySelector('.hwin'); w.style.left = (e.clientX - drag[0]) + 'px'; w.style.top = (e.clientY - drag[1]) + 'px'; w.style.transform = 'none'; hmiPos = [w.style.left, w.style.top]; });
   window.addEventListener('pointerup', () => { drag = null; });
-  el.addEventListener('change', e => { if (e.target.id === 'hmiSel') { if (hmiV && hmiV.detailMove) detailStop(hmiV, '切換車輛，動作停止'); hmiV = vehicles.find(u => u.id === e.target.value); hmiInit(hmiV); hmiMsgText = ''; e.target.blur(); renderHmi(); } });
+  el.addEventListener('change', e => { if (e.target.id === 'hmiLogFilter') { hmiLogFilter = e.target.value; eventPage=0; e.target.blur(); renderHmi(); } if (e.target.id === 'hmiSel') { if (hmiV && hmiV.detailMove) detailStop(hmiV, '切換車輛，動作停止'); eventPage=0; hmiV = vehicles.find(u => u.id === e.target.value); hmiInit(hmiV); hmiMsgText = ''; e.target.blur(); renderHmi(); } });
 }
 // E84 訊號燈：天車送出的、機台送來的（教學用，照目前的取放步驟推算）
 function e84Signals(v) {

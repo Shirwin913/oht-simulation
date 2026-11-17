@@ -278,6 +278,7 @@ function replanAll(a) {
 function clearAlarm(a) {
   const i = alarms.indexOf(a); if (i < 0) return;
   alarms.splice(i, 1);
+  if (a.type === 'vehicle' || a.type === 'transfer') hmiHistoryEnd(a);
   scene.remove(a.marker);
   if (a.type === 'vehicle' || a.type === 'transfer') {
     const v = a.target; v.fault = null; v.estop = false;
@@ -307,7 +308,7 @@ function alarmTick(simDt) {
     a.autoRec.t -= simDt;
     if (a.autoRec.t > 0) continue;
     if (a.autoRec.ok) { log(`🔄 ${a.target.id} 自動復歸成功（${a.info.code}），繼續運行`); a.autoRecovered = true; a.autoRec = null; clearAlarm(a); }
-    else { a.autoRec = null; a.autoRecFailed = true; log(`✋ ${a.target.id} 自動復歸失敗（${a.info.code}），需要人員到現場復歸`); }
+    else { a.autoRec = null; a.autoRecFailed = true; hmiHistory(a.target, 'Warning', '0762', '自動復歸失敗（教學）', a.id); log(`✋ ${a.target.id} 自動復歸失敗（${a.info.code}），需要人員到現場復歸`); }
   }
   for (const a of alarms.slice()) if (a.autoClearAt && simTime >= a.autoClearAt) {
     if (a.type === 'vehicle' && rndA() < 0.4) sendToMaint(a);     // 約四成的天車故障要送維修區
@@ -383,7 +384,7 @@ function renderAlarmCard() {
   c.style.display = 'block';
   document.getElementById('acClose').onclick = closeAlarmCard;
   document.getElementById('acView').onclick = () => focusAlarm(a);
-  if (a.type === 'vehicle' || a.type === 'transfer') document.getElementById('acHmi').onclick = () => { const v = a.target; closeAlarmCard(); setFollow(v); openHmi(v, 'quick'); };
+  if (a.type === 'vehicle' || a.type === 'transfer') document.getElementById('acHmi').onclick = () => { const v = a.target; closeAlarmCard(); setFollow(v); openHmi(v, 'main'); };
   document.getElementById('acClear').onclick = () => clearAlarm(a);
   if (a.type === 'vehicle') document.getElementById('acMaint').onclick = () => { const v = a.target; sendToMaint(a); openMaintCard(); focusMaint(LIFTERS.slice().sort((p, q) => planRoute(v, p.seg, p.d).dist - planRoute(v, q.seg, q.d).dist)[0]); };
 }

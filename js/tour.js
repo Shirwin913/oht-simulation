@@ -40,6 +40,14 @@ function recoverySteps() {
   return out;
 }
 
+function hmiIntroSteps() { return [
+  {t:'異常主畫面', x:'先確認車號、異常狀態及下方警報訊息。', pre:()=>{hmiUser=''; openHmi(tourV(),'main');}, el:'#hmi .big'},
+  {t:'人員登入', x:'點右上角人員登入圖示。', el:'[data-a="login"]', act:true, wait:()=>hmiLoginOpen},
+  {t:'輸入教學帳號密碼', x:'帳號 CIM，密碼 CIM。輸入後按登入，或使用示範。', el:'.hlogin', act:{fn:()=>{document.getElementById('hmiAccount').value='CIM'; document.getElementById('hmiPassword').value='CIM'; hmiLoginAction('login:submit');}}, manualAllowed:true, wait:()=>!!hmiUser},
+  {t:'查看系統紀錄（選用）', x:'可點系統紀錄追查原始 Alarm 與後續 Warning，也可以直接下一步。', el:'[data-tab="records"]', demoOptional:true},
+  {t:'警報紀錄', x:'若已開啟系統紀錄，可查看起始及結束時間。此步驟不是復歸互鎖。', el:()=>hmiTab==='records'?$t('.hrecords'):$t('[data-tab="records"]')},
+  {t:'快速操作', x:'接續原本的異常排除流程。', el:'[data-tab="quick"]', act:true, wait:()=>hmiTab==='quick'}
+]; }
 // ---------- 章節 ----------
 const CHAPTERS = [
   { name: '1. 認識畫面', steps: [
@@ -67,6 +75,7 @@ const CHAPTERS = [
       wait: () => TOUR.ctx.a && TOUR.ctx.a.autoRecFailed },
     { t: '自動復歸失敗', x: '自動復歸失敗，說明卡會顯示紅字。這時才需要人到現場處理。說明卡上有異常碼、發生了什麼、影響、處理步驟；後面的車會在它後面排隊。', el: '#alarmCard' },
     { t: '開操作介面', x: '到現場要用天車的操作介面處理。按「開操作介面（現場排除）」。', el: '#acHmi', act: true },
+    { gen: hmiIntroSteps },
     { t: '快速操作畫面', x: '最上面大字是天車狀態（異常停止）。左邊是五個軸：走行、捲揚、側移、旋轉、夾爪，每一軸有伺服、位置、速度、異常碼。走行的異常碼紅色在閃，伺服也跳成 Off 了。', el: '.hquick .axt' },
     { t: '排除步驟', x: '右邊是這個異常碼的排除步驟，現在該做的那一步會亮黃色。照著做就好；按錯順序，下面的訊息列會提醒你。', el: '.rec' },
     { gen: recoverySteps },
@@ -76,7 +85,8 @@ const CHAPTERS = [
     { t: '取放貨異常', x: '這次讓「下一台開始夾取或放貨的天車」發生取放貨異常（夾爪、吊帶這類問題）。等一下就會有一台車停在半空中。', pre: () => { closeCards(); closeHmi(); setFollow(null); },
       el: '[data-alarm="transfer"]', act: { fn: () => { pendingTransferFault = { autoFail: true }; log('下一台開始夾取／放貨的天車會發生取放貨異常'); } },
       wait: () => alarms.some(a => a.type === 'transfer' && a.autoRecFailed) },
-    { t: '找到那台車', x: '異常發生了，而且自動復歸失敗。吊帶和夾爪停在下面，可能還夾著 FOUP。我們直接開它的操作介面。', pre: () => { const a = alarms.find(a => a.type === 'transfer'); TOUR.ctx.v = a.target; setFollow(a.target); openHmi(a.target, 'quick'); }, el: '.rec' },
+    { t: '找到那台車', x: '異常發生了，而且自動復歸失敗。吊帶和夾爪停在下面，可能還夾著 FOUP。我們直接開它的操作介面。', pre: () => { const a = alarms.find(a => a.type === 'transfer'); TOUR.ctx.v = a.target; setFollow(a.target); openHmi(a.target, 'main'); }, el: '#hmi .big' },
+    { gen: hmiIntroSteps },
     { gen: recoverySteps },
     { t: '完成！', x: '吊帶收回、歸原點成功、切上線以後，天車會把這次取放貨從頭重新做一次（如果貨被清到推車或機台上，這筆搬運就取消，由系統重新安排）。<br>互鎖：有貨又不在放貨位置時按「夾爪開」會被擋下來，因為 FOUP 會掉下去。', el: '#followBar', pre: () => setTimeout(closeHmi, 1500) },
   ] },
@@ -165,7 +175,7 @@ function tourChapterDone() {
   if (TOUR.auto && nx !== null) TOUR.autoNextCh = setTimeout(() => { if (TOUR.on && TOUR.i >= TOUR.steps.length) tourStart(nx); }, 5000);
 }
 function tourEl(st) { if (!st || !st.el) return null; try { return typeof st.el === 'function' ? st.el() : $t(st.el); } catch (e) { return null; } }
-const tourCanNext = st => TOUR.actDone && (!st.wait || st.wait(TOUR.ctx));
+const tourCanNext = st => (TOUR.actDone || (st.manualAllowed && hmiUser)) && (!st.wait || st.wait(TOUR.ctx));
 function renderBubble() {
   const st = TOUR.steps[TOUR.i]; if (!st) return;
   const b = tourUI.bub; b.style.display = 'block'; b.style.transform = 'none';
@@ -199,6 +209,7 @@ function tourDoAct() {
 document.addEventListener('click', e => {
   if (!TOUR.on) return; const st = TOUR.steps[TOUR.i]; if (!st || !st.act || TOUR.actDone) return;
   const el = tourEl(st); if (!el || !el.contains(e.target)) return;
+  if (st.manualAllowed) return;
   if (st.act.fn) { e.preventDefault(); e.stopPropagation(); st.act.fn(TOUR.ctx); }
   TOUR.actDone = true;
 }, true);
@@ -220,6 +231,7 @@ function tourFrame() {
   if (nb) nb.disabled = !ok;
   if (w) w.textContent = !TOUR.actDone ? (TOUR.auto ? '' : '👉 自己按框起來的地方，或按「示範這一步」') : ok ? '' : '⏳ 等待中…（模擬進行中，稍等一下）';
   if (TOUR.auto) {
+    if (st.demoOptional && hmiTab !== 'records') { $t('[data-tab=records]')?.click(); }
     const now = performance.now();
     if (!TOUR.actDone && !TOUR.acting && now - TOUR.enterAt > 1500 + (st.x || '').length * 25) tourDoAct();
     if (ok) { if (!TOUR.readyAt) TOUR.readyAt = now; if (now - TOUR.readyAt > (st.act ? 1500 : 2200 + (st.x || '').length * 35)) tourNext(); }

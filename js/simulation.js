@@ -11,7 +11,7 @@ const STATE_TXT = {
 const stateText = v => (v.pushed ? '人員推車中｜' : '') + (v.noComm ? '通訊中斷｜' : '') + (v.offline ? '下線｜' : '') + (v.state === 'e84' || v.state === 'e84end' ? e84Text(v) : v.state === 'idle' && v.parked ? '軌道上休息' : v.state === 'idle' && v.pushT > 0 ? `被 ${v.pushedBy || '後車'} 推著前進` :
   (v.op && !['idle', 'toPick', 'toDrop', 'toMaint'].includes(v.state) ? (v.op === 'pick' ? '取｜' : '放｜') : '') + STATE_TXT[v.state]);
 function fmt(t) { t = Math.floor(t); const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60; return [h, m, s].map(n => String(n).padStart(2, '0')).join(':'); }
-function log(msg) { logs.unshift([fmt(simTime), msg]); if (logs.length > 40) logs.pop(); }
+function log(msg) { if (typeof eventAdd === 'function') { const words=msg.split(/[^A-Za-z0-9_-]+/); for (const v of vehicles) if(words.includes(v.id)) eventAdd(v, /通訊|Mesh|AP/.test(msg)?'通訊':/派車|任務|搬運|放貨/.test(msg)?'命令':/E84/.test(msg)?'PIO':'操作',msg); } logs.unshift([fmt(simTime), msg]); if (logs.length > 40) logs.pop(); }
 
 // ---------- 路線規劃與行走 ----------
 const LOOK = 14;          // 往前看多遠找前車
@@ -127,7 +127,7 @@ function distToTarget(v) {
 // 沿路線前進，跨過節點時換到下一段（有路線照路線，沒有就走預設：主幹線）
 function advance(v, move) {
   v.d += move; v.dist += move;
-  while (v.d > v.seg.len) { const over = v.d - v.seg.len; v.prevSeg = v.seg; v.seg = v.route.length ? v.route.shift() : nextDefault(v.seg); v.d = over; }
+  while (v.d > v.seg.len) { const over = v.d - v.seg.len; const next = v.manual ? manualNext(v.seg, v) : v.route.length ? v.route.shift() : nextDefault(v.seg); if (!next || (v.manual && next.blocked)) { v.d = v.seg.len; break; } v.prevSeg = v.seg; v.seg = next; v.d = over; }
 }
 // 前車：沿自己前方路線找最近的天車；匯流點：另一條支線上離匯流點更近的車先走
 function leaderInfo(v, pa) {

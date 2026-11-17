@@ -101,7 +101,7 @@ function loop(now) {
   if (!paused) {
     const sd = dt * speed, n = Math.max(1, Math.ceil(sd / 0.04)), h = sd / n;
     for (let i = 0; i < n; i++) {
-      simTime += h; stepPorts(h); ntbTick(h); stepVehicles(h); commTick(h); hmiTick(h);
+      simTime += h; stepPorts(h); ntbTick(h); stepVehicles(h); commTick(h); hmiTick(h); eventTick();
       dispT += h; if (dispT >= 0.5) { dispT = 0; dispatch(); }
     }
   }
@@ -116,5 +116,6 @@ function loop(now) {
   renderer.render(scene, camera);
   uiT += dt; if (uiT > 0.25) { uiT = 0; updateUI(); }
 }
+eventTick();
 log('模擬開始：' + vehicles.length + ' 台天車上線');
 if (BENCH) benchRun(); else { applyGfx(GFX.level, GFX.pref === 'auto' && GFX.weak ? `🖥 偵測到內建顯示卡，畫質自動用「${GFX_LEVELS[GFX.level].name}」（可在「控制」分頁調整）` : ''); updateUI(); requestAnimationFrame(loop); }
