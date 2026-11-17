@@ -26,20 +26,9 @@ function buildLifter(LI) {
   b.add(new THREE.BoxGeometry(0.34, 0.3, 0.34), 0x1f2937, g, 0.45, TOP + 0.25, 0);
   const shaft = new THREE.CylinderGeometry(0.11, 0.11, 2.0, 14).rotateZ(Math.PI / 2);
   [0.62, -0.62].forEach(z => b.add(shaft, 0x6b7280, g, 0, TOP + 0.2, z));
-  // 地面：鋼構平台、黃黑斑馬紋警示區、圍欄（一邊留出入口）
-  b.add(new THREE.BoxGeometry(3.2, 0.3, 1.8), 0x5b6570, g, 0, 0.15, 0);
-  const rail = new THREE.BoxGeometry(1, 0.05, 0.05), fp = new THREE.BoxGeometry(0.06, 1.1, 0.06);
+  // 地面：只有黃黑斑馬紋警示區（現場沒有圍籬、工作桌、地面平台）
   const FX = 2.3, FZ = 1.55;
-  const fence = (x0, z0, x1, z1) => {
-    const L = Math.hypot(x1 - x0, z1 - z0), ry = Math.atan2(-(z1 - z0), x1 - x0), n = Math.max(1, Math.round(L / 1.1));
-    for (let i = 0; i <= n; i++) b.add(fp, YEL, g, x0 + (x1 - x0) * i / n, 0.55, z0 + (z1 - z0) * i / n);
-    [0.5, 1.05].forEach(y => { const r = rail.clone(); r.scale(L, 1, 1); b.add(r, YEL, g, (x0 + x1) / 2, y, (z0 + z1) / 2, ry); });
-  };
-  fence(-FX, -FZ, FX, -FZ); fence(FX, -FZ, FX, FZ); fence(-FX, -FZ, -FX, FZ);
-  fence(-FX, FZ, -0.7, FZ); fence(0.7, FZ, FX, FZ);                         // 正面中間是出入口
-  // 維修工作台、工具櫃、零件架（擺在 Bay 中間的走道上）
-  b.add(new THREE.BoxGeometry(1.6, 0.08, 0.75), 0x8b9299, g, -0.2, 0.9, 2.5);
-  [[-0.9, -0.3], [0.5, -0.3], [-0.9, 0.3], [0.5, 0.3]].forEach(([x, z]) => b.add(new THREE.BoxGeometry(0.06, 0.88, 0.06), DARK, g, x, 0.44, 2.5 + z));
+  // 工具櫃、零件架（擺在 Bay 中間的走道上）
   b.add(new THREE.BoxGeometry(0.6, 1.1, 0.5), 0xc0392b, g, 1.55, 0.55, 2.55);        // 紅色工具櫃
   b.add(new THREE.BoxGeometry(1.2, 1.8, 0.45), 0x6b7682, g, -1.9, 0.9, 2.65);        // 零件架
   [0.45, 0.95, 1.45].forEach(y => b.add(new THREE.BoxGeometry(1.18, 0.04, 0.44), 0x9aa5b1, g, -1.9, y, 2.65));
@@ -211,7 +200,7 @@ function renderMaintCard() {
     <li>開到捲揚機上方停好 → 捲揚機下降（頂上黃燈閃）</li><li>地面維修／保養（倒數計時）</li><li>捲揚機上升，軌道接回去 → 天車重新上線</li></ol>
     <h4>要注意的地方</h4><ul class="impact"><li>全廠有 ${LIFTERS.length} 個維修區，每一台捲揚機一次只能修一台：軌道降下去時那段是斷的。排隊的車會被叫去離自己最近、空著的那一台</li>
     <li>排隊中的車照常在線上巡航，但不會派新任務，所以線上能用的車會變少</li>
-    <li>升降中和車在地面時，圍欄內禁止進入；實際作業要先上鎖掛牌（LOTO）</li></ul>
+    <li>升降中和車在地面時，黃黑警示範圍內禁止進入；實際作業要先上鎖掛牌（LOTO）</li></ul>
     <p class="mut">實務上故障車常常要先切手動模式，由人員慢慢開到維修區。以上為通用做法，實際以各廠 SOP 為準。</p>
     <div class="btns">${LIFTERS.map(L => `<button data-mv="${L.no - 1}">看${L.name}</button>`).join('')}${busy.map(L => `<button data-mf="${L.no - 1}">跟隨 ${L.busy.id}</button>`).join('')}<button id="mcPm" class="ok">送一台去保養</button></div>`;
   c.style.display = 'block';
