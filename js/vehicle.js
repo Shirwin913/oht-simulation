@@ -13,6 +13,7 @@ const VISOR_OUT = 0.12;  // 頂部防撞板往前後凸出多少
 const VISOR_H = 0.055;   // 頂部防撞板厚度（薄板）
 const VISOR_TOP = -0.16; // 頂部防撞板頂面（車子最頂部）
 const BODY_TOP = -0.24, BODY_BOT = -1.66;
+const VPIO = { y: BODY_TOP - 0.1, z: -0.58 };   // 天車端 E84 PIO 收發窗（車頂、靠機台那一側，在車身外側一點點）
 const BOX_H = 0.33, BOX_Y = -0.535;   // 捲揚盒高度與中心（盒底 -0.70，吊帶從盒底出來）
 const BELT_XY = 0.22;   // 吊帶離中心的距離（前後、左右）
 // 三條吊帶（[前後, 左右]）：一側兩條（前後各一）、另一側一條（置中），三點吊掛比較穩、不會晃
@@ -223,13 +224,18 @@ function createVehicle(seg, d) {
     });
   });
 
+  // E84 光通訊器（PIO）天車端：裝在車頂、靠機台那一側的邊緣，收發窗朝下對著機台頂部那一顆；停在 Port 上方時正好對準
+  const pioMat = new THREE.MeshStandardMaterial({ color: 0x0b1220, emissive: 0x000000, roughness: 0.4 });
+  add(box(0.1, 0.06, 0.1, VG.gray), PIO_X, VPIO.y + 0.036, VPIO.z);
+  add(box(0.06, 0.03, 0.06, VG.gray), PIO_X, VPIO.y + 0.05, -0.52);            // 固定座（接到車身側面）
+  add(box(0.05, 0.012, 0.05, pioMat), PIO_X, VPIO.y, VPIO.z);
   const label = makeLabel(id, { scale: 0.62, w: 160, bg: '#' + accent.getHexString() + 'dd', fg: '#0b0f14' });
   scene.add(label); labels.push(label); label.visible = showLabels;   // 名牌不放在車子群組裡：遠看（簡化外形）時也看得到
   scene.add(g);
   const v = { id, seg, d, prevSeg: null, route: [], target: null, v: 0, state: 'idle', op: null, job: null, carry: null, timer: 0,
     hoist: 0, hv: 0, shift: 0, guard: 0, claw: 0, dist: 0,          // 機構狀態：捲揚深度、捲揚速度、側移量、防墜開度(0關1開)、夾爪(0開1合)
     group: g, bogies, shiftG, stages, drum, gripper, belts, fingers, guards, label,
-    topMat: capMat, ledMat, color: '#' + accent.getHexString() };
+    topMat: capMat, ledMat, pioMat, color: '#' + accent.getHexString() };
   [cap, ...pads, front, rear, housing, gm].forEach(m => pickables.push(m));
   if (xray) setXrayMat(capMat, true);
   setHiddenParts(v);

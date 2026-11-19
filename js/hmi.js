@@ -12,23 +12,30 @@
 const STEP_TXT = {
   confirm: '確認現場安全（前方軌道沒有人員、工具、掉落物）', release: '解除緊急停止', manual: '切手動（Auto → Manual）', clear: '按「警報清除」：清掉異常碼，天車同時切成手動',
   'servo:walk': '走行「伺服 On」', 'servo:hoist': '捲揚「伺服 On」', 'jog:walk': '走行「前進」寸動，讓讀碼器重新讀到條碼',
-  claw: '夾爪切到「開極限」', hoavbl: '確認光閘區域淨空、機台端復歸，E84 的 HO_AVBL 恢復 ON', 'home:hoist': '捲揚「原點」：吊帶收回', 'home:shift': '側移「原點」：滑台收回', auto: '切自動（Manual → Auto），天車恢復運行',
-  cargo: '看貨物狀況：要清貨就把 FOUP 放到推車或機台上；不清貨就保留在車上', homeall: '按「歸原點」，等原點成功（所有機構校正完）',
+  claw: '夾爪：無貨賦歸切到開極限、有貨賦歸確認在閉極限', hoavbl: '確認光閘區域淨空、機台端復歸，E84 的 HO_AVBL 恢復 ON', 'home:hoist': '捲揚「原點」：吊帶收回', 'home:shift': '側移「原點」：滑台收回', auto: '切自動（Manual → Auto），天車恢復運行',
+  cargo: '選賦歸方式：無貨賦歸（清貨）或有貨賦歸（不清貨）', homeall: '在「歸原點」旁邊選有／無 FOUP（要跟夾爪上一樣），再按「歸原點」，等原點成功',
   online: '切上線：天車恢復自動、重新接任務',
-  homefail: '歸原點失敗：天車無法復歸（要清貨、推車）', push: '推車：人員把天車推到維修區（天車下線、送修）', hand: '手動切換到需要的手（轉彎＝下手、直行＝上手）',
+  homefail: '歸原點失敗：天車無法復歸（要清貨、推車）', foreign: '到 Port 旁檢查 FOUP 上方：拿掉異物（手機、筆等），確認 FOUP 擺正', reboot: '天車斷電重啟，等控制器重新開機、連線',
+  'chk:wheel': '檢查走行輪：磨損、異物卡住、軌道面油污或掉落物', 'chk:cover': '確認外殼／維修蓋蓋好、鎖扣扣好（開蓋檢知燈熄滅）', 'chk:bumper': '檢查碰撞感測器（保險桿）：讓它復位，確認前方沒有東西、車和貨沒有受損', push: '推車：人員把天車推到維修區（天車下線、送修）', hand: '手動切換到需要的手（轉彎＝下手、直行＝上手）',
 };
 const RECOVERY = {
   // 現場流程：警報清除（天車切手動）→ 依異常處理（伺服、寸動、換手、清貨、夾爪開極限、捲揚／側移回原點）→ 歸原點 → 原點成功後切上線
-  'E-101': ['clear', 'servo:walk', 'homeall', 'online'],
-  'E-102': ['clear', 'jog:walk', 'homeall', 'online'],
-  'E-103': ['confirm', 'clear', 'homeall', 'online'],
+  // 走行中的異常：車上有貨時，由處理人員選有貨賦歸（貨留在車上）或清貨到推車（無貨賦歸）
+  'E-101': ['clear', 'servo:walk', 'cargo', 'claw', 'homeall', 'online'],
+  'E-102': ['clear', 'jog:walk', 'cargo', 'claw', 'homeall', 'online'],
+  'E-103': ['confirm', 'clear', 'cargo', 'claw', 'homeall', 'online'],
+  'E-106': ['clear', 'chk:wheel', 'jog:walk', 'cargo', 'claw', 'homeall', 'online'],
+  'E-107': ['clear', 'chk:cover', 'cargo', 'claw', 'homeall', 'online'],
+  'E-108': ['clear', 'chk:bumper', 'cargo', 'claw', 'homeall', 'online'],
+  'E-109': ['reboot', 'clear', 'cargo', 'claw', 'home:hoist', 'home:shift', 'homeall', 'online'],
   'E-104': ['confirm', 'release', 'clear', 'homeall', 'online'],
-  'E-105': ['clear', 'hand', 'homeall', 'online'],
+  'E-105': ['clear', 'hand', 'cargo', 'claw', 'homeall', 'online'],
   'E-201': ['clear', 'cargo', 'claw', 'home:hoist', 'home:shift', 'homeall', 'online'],
   'E-202': ['clear', 'cargo', 'claw', 'home:hoist', 'home:shift', 'homeall', 'online'],
   'E-203': ['clear', 'servo:hoist', 'cargo', 'claw', 'home:hoist', 'home:shift', 'homeall', 'online'],
-  'E-204': ['hoavbl', 'clear', 'cargo', 'claw', 'home:hoist', 'home:shift', 'homeall', 'online'],
+  'E-204': ['clear', 'cargo', 'claw', 'home:hoist', 'home:shift', 'homeall', 'online'],
   'E-205': ['clear', 'cargo', 'claw', 'home:hoist', 'home:shift', 'homeall', 'online'],
+  'E-206': ['clear', 'foreign', 'cargo', 'claw', 'home:hoist', 'home:shift', 'homeall', 'online'],
 };
 // 歸原點失敗＝天車無法復歸：清貨 → 夾爪開極限 → 捲揚、側移回原點（人員手動）→ 推車到維修區
 const NO_RECOVER = ['clear', 'homefail', 'cargo', 'claw', 'home:hoist', 'home:shift', 'push'];
@@ -38,15 +45,14 @@ function cargoMust(v, a) {
   if (!a || !v.carry) return null;
   if (a.homeFailed) return '天車無法復歸，要推車，貨不能留在車上';
   if (a.clawUnknown && v.claw > 0.01 && v.claw < 0.99) return '夾爪狀態不明（開極限、閉極限都沒亮），不能確定 FOUP 有沒有夾牢';
-  const p = transferPort(v);
-  if (p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && v.hoist > 0.3) { const left = hoistDepth(p) - v.hoist; if (left < 0.15) return `貨離機台只剩約 ${Math.max(5, Math.round(left * 1000))} mm，直接放到機台上`; }
-  return null;
+  if (a.info.code === 'E-108') return '碰撞感測器觸發過，貨可能受損，要清貨交給製造部確認';
+  return null;                                                         // 貨離機台很近也可以有貨賦歸（現場確認）
 }
 const ESTOP_INFO = { code: 'E-104', title: '緊急停止（人員按下 E-STOP）',
   what: '有人在操作介面或現場按下了緊急停止，天車所有動作立刻停止。',
   impact: '跟天車故障停車一樣：停在軌道上，後面的車排隊。如果正在取放貨，吊帶和 FOUP 會停在半空中。',
   steps: ['確認按下急停的原因已經排除、現場安全', '解除緊急停止', '警報清除（天車同時切成手動）', '確認各軸狀態正常後切自動'] };
-const AXIS_OF_CODE = { 'E-204': 'hoist', 'E-101': 'walk', 'E-102': 'walk', 'E-103': 'walk', 'E-104': 'walk', 'E-201': 'claw', 'E-202': 'hoist', 'E-203': 'hoist', 'E-205': 'claw' };
+const AXIS_OF_CODE = { 'E-204': 'hoist', 'E-101': 'walk', 'E-102': 'walk', 'E-103': 'walk', 'E-104': 'walk', 'E-201': 'claw', 'E-202': 'hoist', 'E-203': 'hoist', 'E-205': 'claw', 'E-206': 'hoist', 'E-106': 'walk', 'E-107': 'walk', 'E-108': 'walk' };
 const ON_HOME = (v) => v.hoist < 0.005 && Math.abs(v.shift) < 0.002;
 
 // 異常發生時：有些異常會讓伺服跳脫（alarms.js 的 raiseAlarm 會呼叫）
@@ -107,9 +113,13 @@ function stepDone(v, a, s) {
     case 'servo:walk': return v.servo.walk;
     case 'servo:hoist': return v.servo.hoist;
     case 'jog:walk': return !!a.jogged;
-    case 'claw': return v.carry ? true : v.claw < 0.01;                 // 貨保留在車上時夾爪維持閉極限，這步跳過
-    case 'cargo': return !v.carry || (!!a.keepCargo && !cargoMust(v, a));
+    // 賦歸方式：有貨賦歸＝貨留在夾爪上（夾爪要在閉極限）；無貨賦歸＝車上沒貨（清貨或本來就空車），夾爪開極限
+    case 'claw': return recMode(v, a) === 'cargo' ? !!v.carry && v.claw > 0.99 : !v.carry && v.claw < 0.01;
+    case 'cargo': return !!a.mode && !(a.mode === 'cargo' && cargoMust(v, a)) || (!v.carry && !canLift(v, a));
     case 'homefail': return !!a.homeFailed;
+    case 'foreign': return !!a.foreignChecked;
+    case 'reboot': return !!a.rebooted && !(v.rebootUntil > simTime);
+    case 'chk:wheel': case 'chk:cover': case 'chk:bumper': return !!(a.checks && a.checks[s]);
     case 'push': return false;
     case 'homeall': return !!v.homed && v.homed > a.start && !v.homing;
     case 'hand': return !v.handSw && handsAre(v, v.handNeed || 'up');
@@ -123,15 +133,46 @@ function stepDone(v, a, s) {
 }
 
 // ---------- 手動操作：各軸慢慢動到目標 ----------
-// 清貨：人員把 FOUP 從夾爪拿下來，放到推車（之後人工送回 STB）或放到機台／目的地 Port 上
+// 清貨：人員把 FOUP 從夾爪拿下來，放到推車（交製造部確認，或從 NTB 投回天車系統）或放到機台／目的地 Port 上
 const cartFoups = [];
+// 這次復歸是「有貨賦歸」還是「無貨賦歸」：人員選過就照選的；沒選時，車上有貨＝有貨、空車＝無貨
+const recMode = (v, a) => a && a.mode ? a.mode : v.carry ? 'cargo' : 'nocargo';
+// 看紀錄：這筆搬運是要上機（放貨）還是要夾走（取貨），給建議
+function recRecord(v) {
+  const j = v.job; if (!j) return '';
+  if (!TRANSFERRING.includes(v.state)) return v.carry ? `紀錄：載著 ${v.carry.id} 前往 ${j.to.name}（還沒到）。由處理人員決定：有貨賦歸（貨留在車上，切上線後繼續送），或清貨到推車` : '';
+  const p = transferPort(v); if (!p) return '';
+  const toMachine = p.owner.type === 'machine' || p.owner.type === 'ntb';
+  if (v.op === 'drop') return `紀錄：放貨（要上機）— ${j.foup.id} → ${p.name}。${toMachine ? '建議：清貨，把貨放到機台上，無貨賦歸' : '建議：清貨放回儲位，或有貨賦歸重新放'}`;
+  if (v.op === 'pick') return `紀錄：取貨（要夾走）— ${p.name} 的 ${j.foup.id} → ${j.to.name}。建議：有貨賦歸，把貨夾起來帶走`;
+  return '';
+}
+// 有貨賦歸（取貨中）：夾爪已經降到要取的 FOUP 上方、FOUP 上沒有異物，才能直接夾起來
+function canLift(v, a) {
+  if (!a || v.carry || v.op !== 'pick' || !v.job) return false;
+  const p = transferPort(v); if (!p || p.foup !== v.job.foup) return false;
+  if (a.foreignObj && a.foreignObj.foreign) return false;
+  return v.hoist >= hoistDepth(p) - 0.12;
+}
 function hmiCargo(v, a, where) {
   if (!a) return hmiMsg('目前沒有異常，不需要清貨');
   if (!v.manual) return hmiMsg('要先按「警報清除」（天車切手動）');
+  if (where === 'lift') {                                               // 取貨中：夾爪就在 FOUP 上方 → 夾起來，捲揚回原點時把貨拉上天車
+    if (v.carry) return hmiMsg('夾爪上已經有貨');
+    if (!canLift(v, a)) return hmiMsg('夾爪沒有在要取的 FOUP 上方，不能直接夾起來');
+    const p = transferPort(v), g = v.job.foup;
+    g.localRot = g.rot - v.group.rotation.y; g.carrier = v; g.state = 'moving'; p.foup = null; v.carry = g; v.claw = 1;
+    a.keepCargo = true; a.lifted = true; a.mode = 'cargo'; v.manTouched = true;
+    log(`🧑‍🔧 ${v.id} 有貨賦歸：夾爪夾住 ${g.id}`);
+    return hmiMsg('有貨賦歸：夾爪已夾住 FOUP（閉極限）。接著捲揚回原點把貨拉上天車 → 側移回原點 → 歸原點 → 切上線，天車接著把貨送到目的地');
+  }
+  if (where === 'none') { if (v.carry) return hmiMsg('夾爪上有貨，要無貨賦歸得先清貨（放到機台上或推車）'); a.mode = 'nocargo'; v.manTouched = true; return hmiMsg('無貨賦歸：不夾貨。接著夾爪開極限 → 捲揚、側移回原點 → 歸原點 → 切上線（天車會重新取貨）'); }
   const f = v.carry; if (!f) return hmiMsg('夾爪上沒有貨');
-  if (where === 'keep') { const why = cargoMust(v, a); if (why) return hmiMsg(`這個情況一定要清貨：${why}`); a.keepCargo = true; return hmiMsg('貨物保留在車上（夾爪維持閉極限），之後會重新執行這次取放'); }
-  const job = v.job, port = transferPort(v);
-  if (where === 'port' && !port) return hmiMsg('天車不在 Port 上方，貨只能放到推車');
+  if (where === 'cart') a.toCart = true;
+  if (where === 'keep') { const why = cargoMust(v, a); if (why) return hmiMsg(`這個情況一定要清貨：${why}`); a.keepCargo = true; a.mode = 'cargo';
+    if (v.claw < 0.99) { v.manTouched = true; return hmiMsg('有貨賦歸：夾爪現在不在閉極限，先把夾爪切到「閉極限」，確認 FOUP 夾牢，再捲揚回原點'); } return hmiMsg('有貨賦歸：貨留在夾爪上（閉極限），捲揚回原點時把貨拉上天車；切上線後天車重新執行這次取放'); }
+  const job = v.job, port = TRANSFERRING.includes(v.state) ? transferPort(v) : null;   // 走行中清貨：不在 Port 上方
+  if (where === 'port' && (!port || !TRANSFERRING.includes(v.state))) return hmiMsg('天車不在 Port 上方，貨只能放到推車');
   if (where === 'port' && port.foup) return hmiMsg('這個 Port 上已經有貨，不能放');
   v.carry = null; f.carrier = null; f.job = null; v.manTouched = true;
   if (job) { if (job.to.reserved && job.to !== port) job.to.reserved = false; const i = jobs.indexOf(job); if (i >= 0) jobs.splice(i, 1); }
@@ -144,19 +185,22 @@ function hmiCargo(v, a, where) {
   } else {
     setFoupMatrix(f, new THREE.Matrix4().makeScale(0, 0, 0)); f.state = 'cart'; f.port = null;
     cartFoups.push({ f, back: simTime + 300 });
-    log(`🛒 ${v.id} 清貨：人員把 ${f.id} 放到推車（人工處理，約 5 分鐘後送回 STB）`);
+    log(`🛒 ${v.id} 清貨：人員把 ${f.id} 放到推車（交製造部確認或從 NTB 投回天車系統）`);
   }
   v.job = null; v.op = null; v.state = 'idle'; v.route = []; v.target = null;
   if (port) port.e84 = null;
-  hmiMsg('清貨完成。接著夾爪開極限 → 捲揚、側移回原點 → 歸原點');
+  a.mode = 'nocargo';
+  hmiMsg('清貨完成（無貨賦歸）。接著夾爪開極限 → 捲揚、側移回原點 → 歸原點 → 切上線');
 }
 function cartTick() {
   for (let i = cartFoups.length - 1; i >= 0; i--) {
     const c = cartFoups[i]; if (simTime < c.back) continue;
-    const p = ports.find(q => q.owner.type === 'stb' && !q.foup && !q.reserved && usable(q)); if (!p) continue;
+    // 現場：清下來的貨有些要先交給製造部確認，之後由人員從 NTB 投貨座投回天車系統
+    if (c.qa === undefined) { c.qa = rndD() < 0.5; if (c.qa) { c.back = simTime + 600; log(`🛒 ${c.f.id} 交給製造部確認（約 10 分鐘）`); continue; } }
+    const p = ports.find(q => q.owner.type === 'ntb' && q.ntbDirection === 'in' && !q.foup && !q.reserved && usable(q)); if (!p) continue;
     cartFoups.splice(i, 1);
-    placeFoupAt(c.f, p); p.foup = c.f; c.f.port = p; c.f.state = 'buffered'; c.f.timer = STB_DWELL * 0.3;
-    log(`🛒 人員把推車上的 ${c.f.id} 送回 ${p.name}`);
+    placeFoupAt(c.f, p); p.foup = c.f; c.f.port = p; c.f.state = 'ready'; c.f.job = null; delete c.f.outputKind; if (typeof ntbInCount !== 'undefined') ntbInCount++;
+    log(`🛒 人員把推車上的 ${c.f.id} 從 ${p.name} 投回天車系統`);
   }
 }
 // ---------- 按住寸動：每一幀檢查互鎖，條件不成立就停 ----------
@@ -219,6 +263,7 @@ function holdStep(v, h, dt) {
   return true;
 }
 // ---------- 前手／後手（山形上下手）顯示 ----------
+function handShort(v) { handInit(v); return v.hf === v.hr ? handName(v.hf) : `前${v.hf === 'down' ? '下' : '上'}・後${v.hr === 'down' ? '下' : '上'}`; }
 function handLamp(v) { handInit(v); return v.hf === v.hr ? '山形' + handName(v.hf) : `前手${v.hf === 'down' ? '下' : '上'}・後手${v.hr === 'down' ? '下' : '上'}`; }
 function handRows(v) {
   handInit(v); const [fc, rc] = bogieInCurve(v), sw = v.handSw;
@@ -341,6 +386,7 @@ function hmiAct(act) {
     case 'auto': return hmiAuto(v, a);
     case 'clear':
       if (!a) return hmiMsg('目前沒有異常碼');
+      if (a.info.code === 'E-109' && (!a.rebooted || v.rebootUntil > simTime)) return hmiMsg(!a.rebooted ? '天車斷線、伺服無法切換，按鈕沒有反應。請先「斷電重啟」' : '重啟中，等控制器開機…');
       if (a.autoRec) return hmiMsg('天車正在自動復歸，請等它結果（自動復歸失敗才需要人工）');
       if (v.estop) return hmiMsg('緊急停止還沒解除，警報清不掉');
       if (recList(a)[0] === 'confirm' && !a.confirmed) return hmiMsg('請先確認現場安全（排除步驟第 1 項按「確認」）');
@@ -361,7 +407,11 @@ function hmiAct(act) {
       v.servo[ax] = on; return hmiMsg(`${AXIS_NAME[ax]}伺服 ${on ? 'On' : 'Off'}`);
     }
     case 'home': {
-      if (axis === 'all') return startHoming(v);                       // 歸原點：所有機構依序校正
+      if (axis === 'all') {                                              // 歸原點：先確認有／無 FOUP 選擇跟夾爪實際一樣
+        if (!v.homeFoup) return hmiMsg('歸原點前，請先在「歸原點」左邊的下拉選單選「有 FOUP」或「無 FOUP」');
+        if ((v.homeFoup === 'yes') !== !!v.carry) return hmiMsg(`⚠ 選了「${v.homeFoup === 'yes' ? '有' : '無'} FOUP」，但夾爪在席感測${v.carry ? '有' : '沒有'} FOUP。選擇跟實際不一致，不能歸原點，請確認後重選`);
+        return startHoming(v);
+      }
       if (!needManual(v, axis)) return;
       v.manTouched = true;
       if (axis === 'all') return startHoming(v);
@@ -410,6 +460,25 @@ function hmiAct(act) {
       setOffline(v, false); hmiMsg('已切上線：天車恢復自動、重新接任務 ✔'); return;
     }
     case 'cargo': return hmiCargo(v, a, axis);
+    case 'reboot': {                                                    // 天車斷電重啟：約 15 秒後控制器重新開機、連線
+      if (!a || a.info.code !== 'E-109') return hmiMsg('目前不需要重啟');
+      if (v.rebootUntil > simTime) return hmiMsg('重啟中，等控制器開機…');
+      v.rebootUntil = simTime + 15; a.rebooted = true; log(`🔌 ${v.id} 斷電重啟`);
+      return hmiMsg('天車斷電重啟中（約 15 秒），開機連線後再按「警報清除」');
+    }
+    case 'chk': {                                                       // 走行中異常：人員到現場檢查（走行輪、開蓋、碰撞感測器）
+      if (!a) return hmiMsg('目前沒有異常');
+      if (!v.manual) return hmiMsg('要先按「警報清除」（天車切手動）');
+      (a.checks = a.checks || {})['chk:' + axis] = true; v.manTouched = true;
+      return hmiMsg(`已確認：${STEP_TXT['chk:' + axis]}`);
+    }
+    case 'foreign': {                                                   // 人員到 Port 旁檢查 FOUP：拿掉手機、筆等異物
+      if (!a) return hmiMsg('目前沒有異常');
+      if (!v.manual) return hmiMsg('要先按「警報清除」（天車切手動）');
+      const f = a.foreignObj; a.foreignChecked = true; v.manTouched = true;
+      if (f && f.foreign) { const n = f.foreign.name; removeForeign(f); log(`🧑‍🔧 ${v.id} 人員拿掉 ${f.id} 上的${n}`); return hmiMsg(`已拿掉 FOUP 上的${n}。接著夾爪開極限 → 捲揚、側移回原點 → 歸原點`); }
+      return hmiMsg('已檢查：FOUP 上沒有異物、已擺正。接著夾爪開極限 → 捲揚、側移回原點 → 歸原點');
+    }
     case 'push': {
       if (!a || !a.homeFailed) return hmiMsg('只有「歸原點失敗、天車無法復歸」時才需要推車');
       const miss = NO_RECOVER.filter(s => s !== 'push' && !stepDone(v, a, s));
@@ -451,7 +520,7 @@ function hmiAuto(v, a) {
   if (!v.servo.walk || !v.servo.hoist || !v.servo.shift) return hmiMsg('有軸的伺服是 Off，請先全部 On');
   const transferring = TRANSFERRING.includes(v.state);
   const tp = transferPort(v);
-  if (transferring && tp && tp.owner.type === 'machine' && !hoAvbl(tp)) return hmiMsg('機台的 HO_AVBL 還是 OFF（機台異常或光閘被擋），不能取放貨');
+  // HO_AVBL 沒恢復也可以先賦歸天車（Load Port 由設備工程師復歸）；切上線後重新交握，等不到 HO 就逾時回原儲位
   if (v.manTouched || !transferring) {
     if (!ON_HOME(v)) return hmiMsg('捲揚／側移不在原點，請先按「歸原點」');
     if (!transferring && v.guard > 0.01) return hmiMsg('防墜還是收合的，請先「伸出」（或按歸原點）');
@@ -461,7 +530,7 @@ function hmiAuto(v, a) {
     if (v.carry && v.op === 'pick') v.state = 'guardClose';            // 已經夾到貨：直接收尾、去放貨
     else {
       v.claw = v.carry ? 1 : 0;
-      if (tp && tp.owner.type === 'machine') { v.state = 'e84'; v.timer = 0; v.e84Wait = 0; tp.e84 = v; }   // 機台 Load Port：重新做一次 E84 交握
+      if (tp && (tp.owner.type === 'machine' || tp.owner.type === 'ntb')) { v.state = 'e84'; v.timer = 0; v.e84Wait = 0; tp.e84 = v; }   // 機台 Load Port：重新做一次 E84 交握
       else v.state = 'guardOpen';
     }
   }
@@ -591,14 +660,14 @@ function renderHmi() {
       <div class="hid">車號 <b class="no">${v.id}</b>${sel}</div>
       <div class="big ${a && !a.codeCleared ? 'alarm' : v.manual ? 'manualstate' : ''}">${a && !a.codeCleared ? '異常' : v.manual && !v.homing ? '手動待機' : d.status}</div>
       <div class="lamps">
-        <div class="lamp ${v.homing ? 'blinkL' : ON_HOME(v) ? '' : 'dim'}" title="指示燈：全軸在原點時亮綠燈；歸原點中閃爍">原點</div>
-        <div class="lamp ${v.handSw ? 'blinkL man' : v.manual ? 'man' : ''}" title="指示燈：山形上手／下手（黃＝手動模式）">${v.handSw ? '換手中' : handLamp(v)}</div>
-        <div class="lamp ${commOk(v) ? '' : 'off'}" title="指示燈：跟控制系統連線正常時亮綠燈">連線</div></div>
-      <div class="huser"><button data-a="login" title="人員登入">👤🔒</button><span>${hmiUser || 'No User'}</span></div><button class="hclose" id="hmiClose" title="關閉">✕</button></div>
+        <div class="lamp ${v.homing ? 'blinkL' : ON_HOME(v) ? '' : 'dim'}" title="指示燈：全軸在原點時亮綠燈；歸原點中閃爍"><i></i><b>原點</b></div>
+        <div class="lamp ${v.handSw ? 'blinkL man' : v.manual ? 'man' : ''}" title="指示燈：山形上手／下手（黃＝手動模式）"><i></i><b>${v.handSw ? '換手中' : handShort(v)}</b><small>山形</small></div>
+        <div class="lamp ${commOk(v) ? '' : 'off'}" title="指示燈：跟控制系統連線正常時亮綠燈"><i></i><b>連線</b></div></div>
+      <button class="huser ${hmiUser ? 'in' : ''}" data-a="login" title="人員登入"><span class="hav"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4.2"/><path d="M3.5 21c.8-4.6 4.2-7 8.5-7s7.7 2.4 8.5 7z"/></svg><em>${hmiUser ? '🔓' : '🔒'}</em></span><span class="hun">${hmiUser || 'No User'}</span></button><button class="hclose" id="hmiClose" title="關閉">✕</button></div>
     <div class="htool">
       <span class="tg">模式</span><button data-a="manual" ${v.manual ? 'disabled' : ''}>天車切手動</button><button data-a="auto" ${!v.manual && !a ? 'disabled' : ''}>天車切自動</button>
       <span class="sep"></span><span class="tg">線上</span><button data-a="offline" ${v.offline ? 'disabled' : ''}>下線</button><button data-a="online" ${v.offline || v.manual || a ? '' : 'disabled'}>上線</button>
-      <span class="sep"></span><button data-a="find">尋車</button><button data-a="home:all">歸原點</button>
+      <span class="sep"></span><button data-a="find">尋車</button><select id="hmiFoup" class="${v.homeFoup ? '' : 'unset'}" title="歸原點前要選：夾爪上有沒有 FOUP（要跟實際一樣，不一致不能歸原點）"><option value="" ${v.homeFoup ? '' : 'selected'}>FOUP：請選擇</option><option value="yes" ${v.homeFoup === 'yes' ? 'selected' : ''}>有 FOUP</option><option value="no" ${v.homeFoup === 'no' ? 'selected' : ''}>無 FOUP</option></select><button data-a="home:all">歸原點</button>
       <span class="hinfo">IP 10.0.1.${10 + vehicles.indexOf(v)}（示意）· ${time}</span></div>
     <div class="htabs">${tabs.map(([k, n]) => `<button data-tab="${k}" class="${hmiTab === k ? 'cur' : ''}">${n}</button>`).join('')}</div>
     <div class="hbody">${body}</div>
@@ -635,14 +704,24 @@ let hmiHold = false, hmiPos = null;
   el.addEventListener('pointerdown', e => { if (e.target.closest('.hhead') && !e.target.closest('button,select')) { const w = el.querySelector('.hwin').getBoundingClientRect(); drag = [e.clientX - w.left, e.clientY - w.top]; } });
   window.addEventListener('pointermove', e => { if (!drag) return; const w = el.querySelector('.hwin'); w.style.left = (e.clientX - drag[0]) + 'px'; w.style.top = (e.clientY - drag[1]) + 'px'; w.style.transform = 'none'; hmiPos = [w.style.left, w.style.top]; });
   window.addEventListener('pointerup', () => { drag = null; });
-  el.addEventListener('change', e => { if (e.target.id === 'hmiLogFilter') { hmiLogFilter = e.target.value; eventPage=0; e.target.blur(); renderHmi(); } if (e.target.id === 'hmiSel') { if (hmiV && hmiV.detailMove) detailStop(hmiV, '切換車輛，動作停止'); eventPage=0; hmiV = vehicles.find(u => u.id === e.target.value); hmiInit(hmiV); hmiMsgText = ''; e.target.blur(); renderHmi(); } });
+  el.addEventListener('change', e => { if (e.target.id === 'hmiLogFilter') { hmiLogFilter = e.target.value; eventPage=0; e.target.blur(); renderHmi(); } if (e.target.id === 'hmiFoup' && hmiV) { hmiV.homeFoup = e.target.value; hmiMsg(e.target.value ? `歸原點設定：${e.target.value === 'yes' ? '有' : '無'} FOUP` : ''); e.target.blur(); renderHmi(); } if (e.target.id === 'hmiSel') { if (hmiV && hmiV.detailMove) detailStop(hmiV, '切換車輛，動作停止'); eventPage=0; hmiV = vehicles.find(u => u.id === e.target.value); hmiInit(hmiV); hmiMsgText = ''; e.target.blur(); renderHmi(); } });
 }
 // E84 訊號燈：天車送出的、機台送來的（教學用，照目前的取放步驟推算）
+// 現場做法：機台在天車到站前就把 READY 打開——Port 在 Auto、可以收貨（Port 空的）或可以出貨（貨做完了）時就亮
+//   （SEMI E84 標準是收到天車的 TR_REQ 之後才打開 READY；這裡照現場看到的燈號做）
+function portReadyLamp(p, op) {
+  if (!p || !(p.owner.type === 'machine' || p.owner.type === 'ntb') || !hoAvbl(p)) return 0;
+  if (op === 'pick') return p.foup && p.foup.state !== 'processing' ? 1 : 0;
+  if (op === 'drop') return p.foup ? 0 : 1;
+  return !p.foup || p.foup.state !== 'processing' ? 1 : 0;
+}
 function e84Signals(v) {
   const p = transferPort(v), atMachine = p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && (v.state === 'e84' || TRANSFERRING.includes(v.state));
   const S = { VALID: 0, CS_0: 0, TR_REQ: 0, BUSY: 0, COMPT: 0, L_REQ: 0, U_REQ: 0, READY: 0, HO_AVBL: p && (p.owner.type === 'machine' || p.owner.type === 'ntb') ? +hoAvbl(p) : 0, ES: 1 };
+  S.READY = p ? portReadyLamp(p, v.state === 'toPick' || v.op === 'pick' ? 'pick' : 'drop') : 0;   // 天車還沒來，READY 就可能已經亮著
   if (!atMachine) return { S, p: atMachine ? p : null };
   const st = v.state, req = v.op === 'pick' ? 'U_REQ' : 'L_REQ', k = v.state === 'e84' ? Math.floor(v.timer / E84_TIME * 4) : 9;
+  if (st === 'guardClose') { S.READY = 0; return { S, p }; }                          // 交握已經結束（VALID、COMPT、CS_0 都關了），天車只是在放下防墜板
   if (st === 'e84end') { S.VALID = S.CS_0 = S.COMPT = 1; S.READY = v.timer < E84_END_TIME / 2 ? 1 : 0; return { S, p }; }
   if (k >= 0) S.VALID = S.CS_0 = 1;
   if (k >= 1 && S.HO_AVBL) S[req] = 1;
@@ -655,19 +734,26 @@ function e84Panel(v) {
   const { S, p } = e84Signals(v), lamp = (n, on, bad) => `<span class="e84l ${on ? 'on' : ''} ${bad ? 'bad' : ''}">${n}</span>`;
   if (!p) return `<h5>E84 訊號</h5><div class="mut">不在機台 Load Port 取放貨（STB 儲格不用交握）</div>`;
   return `<h5>E84 訊號（${p.name}）</h5><div class="e84g"><b>天車→機台</b>${['VALID', 'CS_0', 'TR_REQ', 'BUSY', 'COMPT'].map(n => lamp(n, S[n])).join('')}</div>
-    <div class="e84g"><b>機台→天車</b>${['L_REQ', 'U_REQ', 'READY', 'HO_AVBL', 'ES'].map(n => lamp(n, S[n], (n === 'HO_AVBL' && !S[n]))).join('')}</div>`;
+    <div class="e84g"><b>機台→天車</b>${lamp('電源', true)}${lamp('HO_AVBL', S.HO_AVBL, !S.HO_AVBL)}${lamp('READY', S.READY)}${lamp('L_REQ', S.L_REQ)}${lamp('U_REQ', S.U_REQ)}${lamp('ES', false, !S.ES)}</div>`;   // ES 燈：平常暗，急停時才亮紅（訊號本身是 ON＝正常）
 }
 function recoveryBox(v, a) {
   if (!a) return `<div class="hbox rec"><h5>異常排除步驟</h5><p class="mut">這台車目前沒有異常。<br>想練習的話：按 EMERGENCY STOP，或在面板觸發「天車故障停車」「取放貨異常」，再回來這裡排除。</p></div>`;
   if (a.autoRec) return `<div class="hbox rec"><h5>${a.info.code} 自動復歸中…</h5><div class="mut">${a.info.title}</div><p>天車正在自己重試（約 ${Math.ceil(a.autoRec.t)} 秒）。<br>成功的話會自己繼續跑；失敗才需要人工復歸。</p></div>`;
   const steps = recList(a), must = cargoMust(v, a);
   let next = true;
-  return `<div class="hbox rec"><h5>人工復歸步驟：${a.info.code}</h5><div class="mut">${a.info.title}${a.autoRecFailed ? '（自動復歸失敗）' : ''}</div><ol>${steps.map(s => {
+  return `<div class="hbox rec"><h5>人工復歸步驟：${a.info.code}</h5><div class="mut">${a.info.title}${a.noAutoRec ? '（這類異常不會自動復歸）' : a.autoRecFailed ? '（自動復歸失敗）' : ''}</div>${a.type === 'vehicle' && v.carry ? `<div class="mut">🟧 車上有貨（${v.carry.id}）：有貨賦歸，貨留在車上，切上線後繼續送</div>` : ''}<ol>${steps.map(s => {
     const ok = stepDone(v, a, s), cur = !ok && next; if (cur) next = false;
     const extra = s === 'confirm' && !ok ? ` <button data-a="confirm">確認</button>`
-      : s === 'cargo' && !ok ? `<div class="cg"><button data-a="cargo:cart">放到推車</button><button data-a="cargo:port">放到 Port 上</button>${must ? '' : '<button data-a="cargo:keep">保留在車上</button>'}</div>${must ? `<div class="must">⚠ 一定要清貨：${must}</div>` : ''}`
+      : s === 'cargo' && !ok ? `${recRecord(v) ? `<div class="mut rr">📋 ${recRecord(v)}</div>` : ''}${v.carry
+          ? `<div class="cg"><b>無貨賦歸：</b>${TRANSFERRING.includes(v.state) ? '<button data-a="cargo:port">清貨放到機台上</button>' : ''}<button data-a="cargo:cart">清貨放到推車</button></div>${must ? '' : `<div class="cg"><b>有貨賦歸：</b><button data-a="cargo:keep">不清貨，貨留在車上</button></div>`}`
+          : `<div class="cg"><b>有貨賦歸：</b><button data-a="cargo:lift">夾起來帶走</button></div><div class="cg"><b>無貨賦歸：</b><button data-a="cargo:none">不夾貨</button></div>`}${must ? `<div class="must">⚠ 一定要清貨（無貨賦歸）：${must}</div>` : ''}`
+      : s === 'reboot' && !ok ? (v.rebootUntil > simTime ? ` <span class="mut">重啟中…約 ${Math.ceil(v.rebootUntil - simTime)} 秒</span>` : ` <button data-a="reboot">斷電重啟</button>`)
+      : s.startsWith('chk:') && !ok ? ` <button data-a="${s}">確認完成</button>`
+      : s === 'claw' && !ok ? ` <button data-a="claw:${recMode(v, a) === 'cargo' ? 'close' : 'open'}">${recMode(v, a) === 'cargo' ? '閉極限' : '開極限'}</button>`
+      : s === 'foreign' && !ok ? ` <button data-a="foreign">${a.foreignObj ? `拿掉${a.foreignObj.foreign ? a.foreignObj.foreign.name : '異物'}` : '確認沒有異物、FOUP 擺正'}</button>`
       : s === 'push' && cur ? ` <button data-a="push">開始推車</button>`
       : s === 'hand' && !ok ? ` <button data-a="hand:need">切${handName(v.handNeed || 'up')}</button>` : '';
-    return `<li class="${ok ? 'ok' : cur ? 'cur' : ''}">${ok ? '✔' : cur ? '➜' : '・'} ${STEP_TXT[s]}${extra}</li>`;
+    const txt = s === 'claw' ? (recMode(v, a) === 'cargo' ? '有貨賦歸：確認夾爪在「閉極限」（FOUP 夾牢）' : '無貨賦歸：夾爪切到「開極限」') : STEP_TXT[s];
+    return `<li class="${ok ? 'ok' : cur ? 'cur' : ''}">${ok ? '✔' : cur ? '➜' : '・'} ${txt}${extra}</li>`;
   }).join('')}</ol></div>`;
 }

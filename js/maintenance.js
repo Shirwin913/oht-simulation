@@ -18,9 +18,6 @@ function buildLifter(LI) {
   const beamX = new THREE.BoxGeometry(2 * PX + 0.16, 0.18, 0.16), beamZ = new THREE.BoxGeometry(0.16, 0.18, 2 * PZ + 0.16);
   [PZ, -PZ].forEach(z => b.add(beamX, YEL, g, 0, TOP, z));
   [PX, -PX, 0.9, -0.9].forEach(x => b.add(beamZ, YEL, g, x, TOP, 0));
-  // 四根柱子之間的斜撐（只做下半段，不擋人進出）
-  const brace = new THREE.BoxGeometry(0.06, 0.06, 2 * PZ);
-  [PX, -PX].forEach(x => b.add(brace, 0xd9a91c, g, x, 0.9, 0));
   // 頂上：馬達＋減速機，兩根捲筒軸（鏈條從捲筒放下來）
   b.add(new THREE.BoxGeometry(0.6, 0.42, 0.5), 0x3a4652, g, 0, TOP + 0.3, 0);
   b.add(new THREE.BoxGeometry(0.34, 0.3, 0.34), 0x1f2937, g, 0.45, TOP + 0.25, 0);

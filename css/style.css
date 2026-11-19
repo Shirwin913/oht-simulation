@@ -212,6 +212,8 @@ button.ok:hover { background:#166534; }
 #hmi .htool { display:flex; align-items:center; gap:5px; flex-wrap:wrap; padding:6px 10px; background:#dfe5eb; border-bottom:1px solid #b6c0ca; }
 #hmi .htool .tg { font-size:11px; color:#475569; margin-left:2px; }
 #hmi .htool .sep { width:1px; height:22px; background:#94a3b8; margin:0 6px; }
+#hmi .htool select#hmiFoup { font-size:13px; padding:4px 6px; border:1px solid #94a3b8; border-radius:4px; background:#fff; }
+#hmi .htool select#hmiFoup.unset { border-color:#d97706; background:#fffbeb; color:#92400e; }
 #hmi .htool .hinfo { margin-left:auto; font-size:11px; color:#475569; }
 #hmi .htabs { display:flex; gap:4px; padding:6px 10px 0; background:#e9edf1; grid-template-columns:none; }
 #hmi .htabs button { flex:none; padding:7px 16px; border-radius:6px 6px 0 0; border-bottom:none; font-size:13px; }
@@ -296,8 +298,6 @@ button.ok:hover { background:#166534; }
 #hmi .gpcad .big.alarm { background:#ff0808; color:#111; animation:none; }
 #hmi .gpcad .big.manualstate { background:#fff400; }
 #hmi .gpcad .huser { display:grid; justify-items:center; gap:2px; min-width:90px; }
-#hmi .gpcad .huser button { border-radius:50%; background:#243a93; font-size:22px; padding:6px; }
-#hmi .gpcad .huser span { background:#55fa69; text-align:center; width:100%; border:1px solid #398a50; }
 #hmi .gpcad .htabs { order:6; display:flex; gap:3px; padding:3px; background:#39798b; }
 #hmi .gpcad .htabs button { flex:1; border-radius:0; min-height:48px; border:1px solid #7895a2; }
 #hmi .gpcad .htabs button.cur { background:#56a7ee; color:#111; }
@@ -333,3 +333,119 @@ button.ok:hover { background:#166534; }
 @media(max-width:900px){#hmi .gpcad .hmain,#hmi .hrecordlayout {grid-template-columns:1fr;} #hmi .gpcad .hhead {grid-template-columns:repeat(2,minmax(0,1fr));} }
 
 #hmi .hrecordtools {flex-wrap:wrap;} #hmi .hrecordtools input {width:120px; min-width:0;} #hmi .eventpages {display:flex;align-items:center;gap:8px;padding:6px;}
+
+/* ---------- E84 交握動畫 ---------- */
+#e84Demo { position:fixed; left:12px; right:344px; bottom:12px; z-index:40;
+  background:rgba(15,23,42,.94); color:#e2e8f0; border:1px solid rgba(148,163,184,.35); border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.45); font-size:12px; display:none; }
+#e84Demo .hd { display:flex; align-items:center; gap:8px; padding:7px 10px; border-bottom:1px solid rgba(148,163,184,.25); font-weight:700; }
+#e84Demo .hd > span:first-child { flex:1; }
+#e84Demo .hd .sp { font-weight:400; color:#94a3b8; }
+#e84Demo .hd button { font-size:12px; padding:3px 9px; }
+#e84Demo .bd { display:grid; grid-template-columns: 215px 215px 1fr 230px; gap:10px; padding:8px 10px; align-items:start; }
+#e84Demo .ct { color:#94a3b8; margin-bottom:4px; }
+#e84Demo .e84dl { display:grid; grid-template-columns:34px 14px 1fr; align-items:center; gap:4px; padding:2px 0; }
+#e84Demo .e84dl em { font-style:normal; color:#64748b; font-size:10px; font-family:ui-monospace, monospace; }
+#e84Demo .col.pio { background:rgba(30,41,59,.7); border:1px solid #334155; border-radius:8px; padding:6px 8px; }
+#e84Demo .e84dl i { width:12px; height:12px; border-radius:50%; background:#334155; border:1px solid #475569; }
+#e84Demo .e84dl.on i { background:#22c55e; border-color:#86efac; box-shadow:0 0 8px #22c55e; }
+#e84Demo .e84dl.bad i { background:#ef4444; border-color:#fca5a5; box-shadow:0 0 8px #ef4444; }
+#e84Demo .e84dl b { font-family:ui-monospace, monospace; font-size:11px; }
+#e84Demo .e84dl span { color:#94a3b8; font-size:10.5px; line-height:1.2; }
+#e84Demo .e84dl.unused { opacity:.35; }
+#e84Demo .now { background:rgba(56,189,248,.1); border-left:3px solid #38bdf8; padding:5px 8px; margin-bottom:6px; min-height:58px; }
+#e84Demo .now p { margin:3px 0 0; line-height:1.45; }
+#e84Demo canvas { width:100%; height:150px; background:rgba(2,6,23,.6); border-radius:6px; }
+#e84Demo .steps { margin:0; padding-left:20px; color:#64748b; line-height:1.55; }
+#e84Demo .steps li.done { color:#94a3b8; }
+#e84Demo .steps li.cur { color:#fde047; font-weight:700; }
+@media (max-width: 1100px) { #e84Demo .bd { grid-template-columns: 1fr 1fr; } #e84Demo .bd .col.wide { grid-column: 1 / -1; } #e84Demo .steps { display:none; } }
+@media (max-width: 760px) { #e84Demo { right:8px; left:8px; bottom:auto; top:8px; max-height:52vh; overflow:auto; } }
+#e84Demo .pn { font-size:10.5px; margin-top:4px; line-height:1.4; color:#94a3b8; }
+#e84Demo .ladder { padding:0; }
+#e84Demo .ladder .lh { display:flex; justify-content:space-between; margin-bottom:4px; }
+#e84Demo .ladder .lh span { background:#3b82f6; color:#fff; font-weight:700; border-radius:5px; padding:2px 8px; font-size:11px; }
+#e84Demo .ladder .lh span:last-child { background:#14b8a6; }
+#e84Demo .lr { position:relative; text-align:center; height:24px; color:#475569; font-size:11px; }
+#e84Demo .lr span { position:relative; top:-1px; }
+#e84Demo .lr b { position:absolute; left:6px; right:6px; bottom:3px; height:2px; background:currentColor; }
+#e84Demo .lr.r b::after, #e84Demo .lr.l b::after { content:''; position:absolute; top:-4px; border:5px solid transparent; }
+#e84Demo .lr.r b::after { right:-3px; border-left-color:currentColor; border-right:0; }
+#e84Demo .lr.l b::after { left:-3px; border-right-color:currentColor; border-left:0; }
+#e84Demo .lr.a { height:20px; font-style:italic; }
+#e84Demo .lr.done.r { color:#3b82f6; } #e84Demo .lr.done.l { color:#14b8a6; } #e84Demo .lr.done.a { color:#94a3b8; }
+#e84Demo .lr.cur { color:#fde047; font-weight:700; }
+#e84Demo .lr.cur b { animation: e84dash .6s linear infinite; background:repeating-linear-gradient(90deg, currentColor 0 8px, transparent 8px 12px); }
+@keyframes e84dash { from { background-position:0 0; } to { background-position:12px 0; } }
+#e84Demo .lr.cur.l b { animation-direction:reverse; }
+#e84Demo .e84dl.pwr i { background:#f59e0b; border-color:#fcd34d; box-shadow:0 0 8px #f59e0b; }
+#e84Demo .e84dl.pwr { border-bottom:1px dashed #334155; padding-bottom:4px; margin-bottom:2px; }
+/* E84 PIO 通訊器外觀：深灰金屬外殼、黑色面板、兩排紅色 LED */
+#e84Demo .pio-dev { background:linear-gradient(160deg, #5b636d 0%, #3a4048 45%, #262b31 100%); border:1px solid #6b7280; border-radius:9px; padding:5px 6px 6px; box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 3px 8px rgba(0,0,0,.4); }
+#e84Demo .pio-hd { color:#e5e7eb; font-size:11px; font-weight:700; margin:0 2px 4px; }
+#e84Demo .pio-face { background:#0f1216; border-radius:6px; padding:4px 5px; border:1px solid #1f2937; box-shadow:inset 0 2px 6px rgba(0,0,0,.6); }
+#e84Demo .pio-row { display:grid; grid-template-columns: 1fr 10px 14px 10px 1fr; align-items:center; gap:4px; height:17px; }
+#e84Demo .pio-row b { font:600 10px/15px ui-monospace, monospace; padding-bottom:1px; color:#e5e7eb; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; }
+#e84Demo .pio-row b.r { text-align:left; }
+#e84Demo .pio-row b.un { color:#4b5563; font-weight:400; }
+#e84Demo .pio-row em { font:700 10px ui-monospace, monospace; color:#f8fafc; font-style:normal; text-align:center; }
+#e84Demo .pio-row i, #e84Demo .pio-ft i { width:9px; height:9px; border-radius:2px; background:#3a1414; border:1px solid #5b1d1d; }
+#e84Demo .pio-row i.on, #e84Demo .pio-ft i.on { background:#ff3b3b; border-color:#fca5a5; box-shadow:0 0 6px #ff2d2d, 0 0 2px #fff inset; }
+#e84Demo .pio-cap { height:14px; } #e84Demo .pio-cap b { color:#cbd5e1; font-size:9.5px; letter-spacing:.5px; }
+#e84Demo .pio-ft { display:flex; align-items:center; gap:5px; margin:5px 2px 0; font:700 9.5px ui-monospace, monospace; color:#cbd5e1; letter-spacing:.5px; }
+#e84Demo .pio-3 { display:flex; justify-content:space-around; margin:6px 0 2px; padding:4px 2px; background:#0f1216; border:1px solid #fbbf24; border-radius:5px; }
+#e84Demo .pio-3 span { display:flex; align-items:center; gap:4px; font:700 10px ui-monospace, monospace; color:#e5e7eb; }
+#e84Demo .pio-3 i { width:11px; height:11px; border-radius:50%; background:#3a1414; border:1px solid #5b1d1d; }
+#e84Demo .pio-3 i.on { background:#ff3b3b; border-color:#fca5a5; box-shadow:0 0 7px #ff2d2d, 0 0 2px #fff inset; }
+#e84Demo .pio-3t { font-size:10px; color:#fde68a; text-align:center; }
+#hmi .e84g3 { display:inline-flex; gap:2px; padding:1px; border:1px solid #f59e0b; border-radius:4px; margin-right:3px; }
+#e84Demo .pio-3v { display:flex; flex-direction:column; align-items:center; gap:3px; margin:6px auto 2px; padding:4px 10px; width:max-content; background:#0f1216; border:1px solid #fbbf24; border-radius:5px; }
+#e84Demo .pio-3v span { display:grid; grid-template-columns:42px 11px; gap:5px; align-items:center; }
+#e84Demo .pio-3v b { font:700 10px ui-monospace, monospace; color:#e5e7eb; text-align:right; }
+#e84Demo .pio-3v i { width:11px; height:11px; border-radius:2px; background:#3a1414; border:1px solid #5b1d1d; }
+#e84Demo .pio-3v i.on { background:#ff3b3b; border-color:#fca5a5; box-shadow:0 0 7px #ff2d2d, 0 0 2px #fff inset; }
+/* E84 PIO：實體通訊器外觀（SVG）＋通道名稱表 */
+#e84Demo .pio-dev2 .pio-hd { color:#e5e7eb; font-size:11px; font-weight:700; margin:0 2px 3px; }
+#e84Demo .pio-svg { width:100%; display:block; filter:drop-shadow(0 4px 6px rgba(0,0,0,.5)); }
+#e84Demo .pio-svg .pn { font:700 7px ui-monospace, monospace; fill:#f1f5f9; text-anchor:middle; }
+#e84Demo .pio-svg .pr { font:700 7.5px ui-monospace, monospace; fill:#f1f5f9; }
+#e84Demo .pio-svg .pl { font:700 6.5px ui-monospace, monospace; fill:#e2e8f0; text-anchor:end; }
+#e84Demo .pio-svg .pt { font:600 7px sans-serif; fill:#6b7280; text-anchor:middle; }
+#e84Demo .pio-lg { margin-top:3px; font:10px/13px ui-monospace, monospace; }
+#e84Demo .pio-lg > div { display:grid; grid-template-columns:12px 1fr 1fr; gap:4px; }
+#e84Demo .pio-lg .lgh { color:#64748b; font-size:9.5px; border-bottom:1px solid #334155; margin-bottom:1px; }
+#e84Demo .pio-lg span { color:#cbd5e1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#e84Demo .pio-lg span:first-child { color:#64748b; }
+#e84Demo .pio-lg span.un { color:#475569; }
+#e84Demo .pio-lg span.on { color:#ff6b6b; font-weight:700; text-shadow:0 0 6px rgba(255,45,45,.6); }
+#e84Demo .pio-svg .br { font:600 8px sans-serif; fill:#f1f5f9; text-anchor:middle; }
+#e84Demo .pio-svg .nm { font:700 8.6px ui-monospace, monospace; fill:#cbd5e1; }
+#e84Demo .pio-svg .nm.l { text-anchor:end; }
+#e84Demo .pio-svg .nm.un { fill:#475569; font-weight:400; }
+#e84Demo .pio-svg .nm.on { fill:#ff6b6b; }
+#e84Demo .pio-svg .pn { font:600 8.5px sans-serif; fill:#f8fafc; text-anchor:middle; }
+#hmi .rec .cg b { font-size:11px; color:#334155; white-space:nowrap; align-self:center; }
+#hmi .rec .rr { margin-top:3px; color:#1d4ed8; }
+/* 指示燈：深色面板＋LED，標籤在下面（新版） */
+#hmi .lamps { display:flex; gap:4px; padding:5px 6px; background:linear-gradient(#2b3440,#1d242d); border:1px solid #0f141a; border-radius:10px; box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 1px 3px rgba(0,0,0,.25); }
+#hmi .lamp, #hmi .gpcad .lamp { width:auto; min-width:58px; height:auto; min-height:56px; padding:5px 2px 4px; border:0; border-radius:7px; background:transparent; box-shadow:none;
+  display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:3px; color:#e5e7eb; font-size:12px; line-height:1.1; text-align:center; white-space:nowrap; }
+#hmi .lamp i { width:20px; height:20px; border-radius:50%; border:2px solid #0b0f14; background:radial-gradient(circle at 35% 30%,#bbf7d0,#22c55e 55%,#15803d);
+  box-shadow:0 0 8px 2px rgba(34,197,94,.65), inset 0 -2px 3px rgba(0,0,0,.25); }
+#hmi .lamp b { font-weight:700; font-size:12px; letter-spacing:.5px; }
+#hmi .lamp small { font-size:10px; color:#94a3b8; margin-top:-1px; }
+#hmi .lamp.dim i { background:radial-gradient(circle at 35% 30%,#6b7280,#374151); box-shadow:inset 0 -2px 3px rgba(0,0,0,.35); }
+#hmi .lamp.dim b { color:#9ca3af; }
+#hmi .lamp.man i { background:radial-gradient(circle at 35% 30%,#fef08a,#f59e0b 55%,#b45309); box-shadow:0 0 8px 2px rgba(245,158,11,.6), inset 0 -2px 3px rgba(0,0,0,.25); }
+#hmi .lamp.off i { background:radial-gradient(circle at 35% 30%,#fecaca,#ef4444 55%,#b91c1c); box-shadow:0 0 8px 2px rgba(239,68,68,.65), inset 0 -2px 3px rgba(0,0,0,.25); }
+#hmi .lamp.blinkL { animation:none; }
+#hmi .lamp.blinkL i { animation:hblink .6s infinite; }
+/* 人員登入：頭像＋鎖，名字膠囊 */
+#hmi .huser, #hmi .gpcad .huser { display:flex; flex-direction:column; align-items:center; gap:4px; min-width:84px; padding:4px 8px; background:none; border:0; cursor:pointer; font:inherit; }
+#hmi .huser .hav { position:relative; width:40px; height:40px; border-radius:50%; background:linear-gradient(#3b4b8f,#1e2a5e); border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.3); display:flex; align-items:center; justify-content:center; }
+#hmi .huser .hav svg { width:24px; height:24px; fill:#c7d2fe; }
+#hmi .huser .hav em { position:absolute; right:-6px; bottom:-4px; font-style:normal; font-size:13px; width:20px; height:20px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,.3); }
+#hmi .huser .hun, #hmi .gpcad .huser span.hun { width:auto; min-width:72px; padding:1px 10px; border-radius:999px; font-size:12px; font-weight:600; text-align:center; background:#e5e7eb; color:#475569; border:1px solid #9ca3af; }
+#hmi .huser.in .hav { background:linear-gradient(#16a34a,#166534); }
+#hmi .huser.in .hav svg { fill:#dcfce7; }
+#hmi .huser.in .hun, #hmi .gpcad .huser.in span.hun { background:#dcfce7; color:#166534; border-color:#22c55e; }
+#hmi .huser:hover .hav { filter:brightness(1.12); }

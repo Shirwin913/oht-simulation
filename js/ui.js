@@ -78,8 +78,8 @@ $('btnVehPm').onclick = () => { if (followed) vehPm(followed); updateUI(); };
 // 異常事件
 document.querySelectorAll('[data-alarm]').forEach(b => b.onclick = () => {
   const t = b.dataset.alarm;
-  const a = ({ vehicle: raiseVehicleFault, transfer: raiseTransferFault, machine: raiseMachineDown, track: raiseTrackBlock, ap: raiseApDown, host: raiseHostDown, curtain: raiseCurtain, hand: raiseHandFail, claw: raiseClawUnknown, near: raiseNearPort, norec: raiseNoRecover })[t]();
-  if (a) { openAlarmCard(a); focusAlarm(a); } else if (!['transfer', 'curtain', 'hand', 'claw', 'near'].includes(t)) log('現在找不到可以發生這個異常的對象');
+  const a = ({ vehicle: raiseVehicleFault, transfer: raiseTransferFault, machine: raiseMachineDown, track: raiseTrackBlock, ap: raiseApDown, host: raiseHostDown, curtain: raiseCurtain, hand: raiseHandFail, hodrop: raiseHoDrop, cantrec: raiseCantRecover, homid: raiseHoMid, foreign: () => raiseForeignObject(), tilt: raiseGripTilt, claw: raiseClawUnknown, near: raiseNearPort, norec: raiseNoRecover })[t]();
+  if (a) { openAlarmCard(a); focusAlarm(a); } else if (!['transfer', 'curtain', 'hand', 'claw', 'near', 'hodrop', 'homid', 'cantrec', 'foreign', 'tilt'].includes(t)) log('現在找不到可以發生這個異常的對象');
   updateUI();
 });
 function setShowComm(on) { showComm = on; $('showComm').checked = on; }
@@ -93,6 +93,7 @@ $('btnCommInfo').onclick = () => {                                      // 看�
   $('icComm').onclick = () => { setShowComm(!showComm); sync(); }; sync();
 };
 $('btnE84Info').onclick = () => openInfoCard('e84');
+$('btnE84Demo').onclick = () => startE84Demo();
 $('apCap').oninput = e => { AP_CAP = +e.target.value; $('apCapVal').textContent = AP_CAP + ' 台'; };
 $('gwCap').oninput = e => { GW_CAP = +e.target.value; $('gwCapVal').textContent = GW_CAP + ' 台'; };
 $('relayCap').oninput = e => { RELAY_CAP = +e.target.value; $('relayCapVal').textContent = RELAY_CAP + ' 台'; };
@@ -205,10 +206,17 @@ const INFO_CARDS = {
     <li>做完了回報不出去，MCS 不知道 FOUP 已經放好，那個 FOUP 的下一站也會延遲；恢復通訊後才補回報</li><li>前後車防撞靠車頭感測器，跟無線網路無關，所以不會因為斷線撞車</li></ul>
     <p class="mut">AP 數量、位置、漫遊門檻都是示意，實際以各廠網路規劃為準。</p>`],
   e84: ['🤝 E84 交握（天車 ↔ 機台 Load Port）', `
+    <p><button class="primary" data-run="e84demo">▶ 播放 E84 交握動畫</button> <span class="mut">鏡頭會跟著一台天車，畫面下方顯示訊號燈和時序圖</span></p>
     <h4>為什麼要交握</h4><p>天車要把 FOUP 放到機台的 Load Port（或從上面拿走）之前，要先跟機台確認「現在可以」，不然機台正在動作時放下去會撞到。
-    這套訊號的標準叫 SEMI E84，通常是 Load Port 旁邊的光通訊器（PIO）跟天車對傳，跟無線 AP 是分開的。</p>
+    這套訊號的標準叫 SEMI E84，跟無線 AP 是分開的。</p>
+    <h4>兩端各一顆光通訊器（PIO）</h4><p>天車和 Load Port 各裝一顆 E84 光通訊器，用紅外光對射：機台端裝在機台頂部（靠軌道那一側的邊緣）、朝上；天車端裝在車頂靠機台那一側，收發窗朝下對著它。
+    天車停在 Port 正上方時兩顆剛好對準。每顆有 8 個送出（OUT）、8 個接收（IN），天車的 OUT 就是機台的 IN，反之亦然。
+    模擬裡 Load Port 端那顆平常亮綠燈（HO_AVBL ON），交握時兩顆一起閃青色、中間有一道光束，訊號每變一次就亮一下。
+    停不準、被擋到或鏡面髒了會收不到訊號，就是現場常見的交握逾時原因之一。</p>
     <h4>流程（簡化）</h4><ol><li>前提：機台送出 HO_AVBL（可以交握）＝ON，代表機台正常、Load Port 前面的光閘沒被擋到</li><li>天車：CS_0（選哪個 Port）＋ VALID（我要開始了）</li><li>機台：L_REQ（可以放）／U_REQ（可以取）</li>
-    <li>天車：TR_REQ（請求搬運）</li><li>機台：READY → 天車：BUSY（開始下降、取放）</li><li>取放完、捲揚升上來：天車 BUSY 關、COMPT（完成）</li><li>機台 READY 關 → 天車 VALID、COMPT 關，交握結束</li></ol>
+    <li>天車：TR_REQ（請求搬運）</li><li>機台：READY（現場在天車到站前就已經亮著）→ 天車：BUSY（開始下降、取放）</li><li>取放完、捲揚升上來：天車 BUSY 關、COMPT（完成）</li><li>機台 READY 關 → 天車 VALID、COMPT 關，交握結束</li></ol>
+    <h4>現場指示燈怎麼看</h4><p>自動取放時，機台端通訊器的<b>電源燈</b>和 <b>HO_AVBL</b> 燈要亮著；<b>READY</b> 在天車到站前就亮著（Port 可以收貨或出貨時就亮；SEMI E84 標準是收到天車的 TR_REQ 才打開，這裡照現場的做法）。
+    <b>ES</b> 燈平常是暗的，亮起來代表急停。（E84 的 ES 訊號本身是 ON＝正常；指示燈畫成「急停時才亮」，跟現場看到的一致。實際以各設備標示為準。）</p>
     <h4>光閘和 HO_AVBL</h4><p>Load Port 靠走道那一側有兩根光閘柱（頂端橘色），柱子上有指示燈條：平常是<b>綠色</b>，被擋到時變<b>紅色</b>，中間有看不見的光束。取放貨過程中只要有東西擋到光閘，或機台異常，
     機台的 HO_AVBL 就會變 OFF，天車立刻停止捲揚、這次取放貨失敗（E-204），要人員確認淨空、機台復歸後，再用操作介面復歸，天車會重新交握再做一次。
     「異常」分頁的「光閘遮斷（E84 中斷）」可以示範：光束會變紅閃，操作介面主畫面的 E84 訊號燈 HO_AVBL 會變紅。</p>
@@ -292,6 +300,7 @@ function openInfoCard(kind, onClose) {
   const [title, body] = INFO_CARDS[kind], c = $('alarmCard');
   c.innerHTML = `<div class="hd"><span>${title}</span><button id="acClose">✕</button></div>${body}`;
   c.style.display = 'block';
+  c.querySelectorAll('[data-run="e84demo"]').forEach(b => b.onclick = () => { c.style.display = 'none'; startE84Demo(); });
   $('acClose').onclick = () => { c.style.display = 'none'; if (onClose) onClose(); };
 }
 

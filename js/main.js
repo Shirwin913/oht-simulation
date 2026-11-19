@@ -105,6 +105,8 @@ function loop(now) {
       dispT += h; if (dispT >= 0.5) { dispT = 0; dispatch(); }
     }
   }
+  if (e84Demo) e84DemoTick();
+  pioVisuals(clock.elapsedTime);                                   // E84 PIO 燈號、光束（要在 updateVisuals 前，燈號一起寫回）
   updateVisuals(clock.elapsedTime);
   alarmTick(paused ? 0 : dt * speed);
   updateLabelLod(dt);

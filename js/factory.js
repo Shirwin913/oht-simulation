@@ -13,7 +13,12 @@ const screenBatch = makeBatch();                  // 機台螢幕（會發光）
 const portLeds = makeLedBank(new THREE.BoxGeometry(0.6, 0.08, 0.05));
 const stbLeds = makeLedBank(new THREE.BoxGeometry(0.5, 0.05, 0.03));
 const lcLeds = makeLedBank(new THREE.BoxGeometry(0.014, 0.66, 0.022));   // 光閘柱上的指示燈條：綠＝正常、紅＝被遮斷
-let pendingLc = null;
+let pendingLc = null, pendingPio = null;
+// E84 光通訊器（PIO）：機台端那一顆裝在機台頂部（靠軌道那一側的邊緣）、朝上，對著天車車頂側邊那一顆；NTB 裝在台體頂框上
+//   PIO_X＝沿軌道方向離 Port 中心的距離（天車那顆裝在同樣的位置，停在 Port 上方時兩顆對準）
+const PIO_X = 0.3;
+const pioLeds = makeLedBank(new THREE.BoxGeometry(0.05, 0.012, 0.05));
+const pio3Leds = makeLedBank(new THREE.BoxGeometry(0.026, 0.026, 0.008));   // 機台端 PIO 正面三顆並排指示燈：電源、HO_AVBL、READY
 const G = {
   box: (w, h, d) => new THREE.BoxGeometry(w, h, d),
   pin: new THREE.CylinderGeometry(0.03, 0.04, 0.05, 8),
@@ -23,6 +28,7 @@ const G = {
 };
 G.machine = G.box(4.4, 3.0, 2.6); G.front = G.box(3.6, 1.6, 0.05); G.screen = G.box(0.9, 0.55, 0.06);
 G.portBase = G.box(0.95, 1.0, 0.95); G.portPlate = G.box(0.82, 0.04, 0.82);
+G.pioBox = G.box(0.16, 0.12, 0.14);
 G.stbShelf = G.box(2.3, 0.05, 0.95);                                       // 儲格底板
 G.stbRailL = G.box(2.36, 0.06, 0.06); G.stbRailW = G.box(0.06, 0.06, 1.01);    // 底板四周的框（角鋼）
 G.stbFenceL = G.box(2.3, 0.025, 0.025); G.stbFenceW = G.box(0.025, 0.025, 0.95); G.stbPost = G.box(0.03, 0.14, 0.03);   // 低矮護欄
@@ -36,12 +42,12 @@ function addPort(seg, d, lat, top, owner, name, doorSide, ledMat) {
   const f = frameAt(seg, d);
   const p = { id: ports.length, name, seg, d, lat, top, owner, foup: null, reserved: false, ledMat,
     x: f.x + lat * f.nx, z: f.z + lat * f.nz, rot: facing(f, doorSide) };
-  if (owner.type === 'machine' || owner.type === 'ntb') { p.lcLeds = pendingLc; pendingLc = null; }
+  if (owner.type === 'machine' || owner.type === 'ntb') { p.lcLeds = pendingLc; pendingLc = null; if (pendingPio) { p.pioLed = pendingPio.led; p.pio3 = pendingPio.three; p.pioPos = pendingPio.pos; pendingPio = null; } }
   ports.push(p); owner.ports.push(p); return p;
 }
 const LC_Z = 0.46;                                   // 光閘在 Load Port 靠走道那一側（區域座標 z）
 // Load Port 外觀（群組 g 的區域座標，x 沿軌道、z 側向）
-function portMesh(g, lx, ledSide) {
+function portMesh(g, lx, ledSide, pio) {
   staticBatch.add(G.portBase, 0x7d8894, g, lx, 0.5, 0);
   staticBatch.add(G.portPlate, 0x2a3138, g, lx, 1.0, 0);
   [[0.25, 0], [-0.15, 0.22], [-0.15, -0.22]].forEach(([px, pz]) => staticBatch.add(G.pin, 0xc9ced4, g, lx + px, 1.04, pz));
@@ -50,6 +56,14 @@ function portMesh(g, lx, ledSide) {
     staticBatch.add(G.lcPost, 0x2b3036, g, lx + k * 0.42, 1.45, LC_Z); staticBatch.add(G.lcCap, 0xf59e0b, g, lx + k * 0.42, 1.87, LC_Z);
     return lcLeds.add(g, lx + k * 0.42, 1.45, LC_Z + 0.022);                  // 燈條貼在柱子朝走道那一面
   });
+  // E84 PIO（機台端）：通訊器盒放在機台頂部／NTB 頂框上，頂面是收發窗（燈：綠＝HO_AVBL ON 待命、紅＝OFF、青色閃＝交握中）
+  if (pio) {
+    staticBatch.add(G.pioBox, 0x1f2937, g, lx + PIO_X, pio.y + 0.06, pio.z);
+    g.updateMatrixWorld(true);
+    // 正面（朝走道）三顆紅燈直排：由下往上 電源、HO、READY；人員抬頭看到三顆一起亮＝可以取放
+    const three = [-0.035, 0, 0.035].map(dy => pio3Leds.add(g, lx + PIO_X + 0.045, pio.y + 0.06 + dy, pio.z + 0.074));   // 由下往上：電源、HO、READY（直排）
+    pendingPio = { led: pioLeds.add(g, lx + PIO_X - 0.03, pio.y + 0.123, pio.z), three, pos: new THREE.Vector3(lx + PIO_X - 0.03, pio.y + 0.126, pio.z).applyMatrix4(g.matrixWorld) };
+  }
   return portLeds.add(g, lx, 0.82, ledSide * 0.49);
 }
 // 在軌道 seg 的 d 處建一個群組，區域座標：x 沿行進方向、z 為天車左手邊
@@ -74,7 +88,7 @@ function makeMachine(seg, dc, name) {
   });
   const lb = makeLabel(name, { scale: 0.8 }); lb.position.set(0, 3.9, zc); g.add(lb); labels.push(lb);
   g.updateMatrixWorld(true); lb.userData.wp = lb.getWorldPosition(new THREE.Vector3()); machineLabels.push(lb);
-  [-0.95, 0.95].forEach((lx, i) => addPort(seg, dc + lx, 0, PORT_TOP, m, `${name}-P${i + 1}`, side, portMesh(g, lx, -side)));
+  [-0.95, 0.95].forEach((lx, i) => addPort(seg, dc + lx, 0, PORT_TOP, m, `${name}-P${i + 1}`, side, portMesh(g, lx, -side, { y: 3.0, z: -0.8 })));
   machines.push(m);
 }
 
@@ -86,7 +100,7 @@ function makeNtb(seg, dc, zone) {
   // NTB 直接安裝於原地板；無獨立操作台、無黃色地板或大型背板。
   [-.95,.95].forEach((lx,i) => {
     const moduleId = `M${String((stationNo-1)*2+i+1).padStart(2,'0')}`;
-    const p = addPort(seg, dc+lx, 0, PORT_TOP, owner, `${name}-${moduleId}`, -1, portMesh(g,lx,1));
+    const p = addPort(seg, dc+lx, 0, PORT_TOP, owner, `${name}-${moduleId}`, -1, portMesh(g,lx,1,{y:1.887,z:-LC_Z}));
     p.moduleId = moduleId; p.ntbDirection = i === 0 ? 'in' : 'out';
     const tag = makeLabel(`${moduleId} ${i === 0 ? '投貨' : '取貨'}`, {scale:.55}); tag.position.set(lx,2.05,.5); g.add(tag); labels.push(tag);
   });
@@ -190,4 +204,4 @@ mainSegs.forEach((sg, i) => {
 // ---------- 把合併好的靜態物件放進場景 ----------
 staticBatch.build(vcMat({ metalness: 0.3, roughness: 0.55 }));
 screenBatch.build(vcMat({ color: 0x0b1a26, emissive: 0x1d6fa5, emissiveIntensity: 0.6 }), false);
-portLeds.build(); stbLeds.build(); lampBank.build(); lcLeds.build();
+portLeds.build(); stbLeds.build(); lampBank.build(); lcLeds.build(); pioLeds.build(); pio3Leds.build();

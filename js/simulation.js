@@ -182,7 +182,9 @@ function curveLimit(v, vTop, pa) {
 
 function updateVehicle(v, dt) {
   if (v.fault || v.manual || v.estop) { v.v = 0; v.yielding = false; v.waitT = 0; return; }   // 異常中、手動模式：停在原地等人處理（alarms.js、hmi.js）
-  if (pendingTransferFault && !pendingTransferFault.nearPort && (pendingTransferFault.clawUnknown ? v.state === 'release' && v.carry : v.state === 'grip' || v.state === 'release')) { raiseTransferFault(v); return; }
+  if (v.state === 'grip' && v.op === 'pick' && v.job && v.job.foup.foreign) { raiseTransferFault(v, { tension: true, autoFail: true }); return; }   // FOUP 上有異物：夾爪頂到
+  if (pendingTransferFault && pendingTransferFault.tension) { if (v.state === 'grip' && v.op === 'pick') { raiseTransferFault(v); return; } }
+  else if (pendingTransferFault && !pendingTransferFault.nearPort && (pendingTransferFault.clawUnknown ? v.state === 'release' && v.carry : v.state === 'grip' || v.state === 'release')) { raiseTransferFault(v); return; }
   if (pendingTransferFault && pendingTransferFault.nearPort && v.state === 'lower' && v.carry) {   // 教學：在機台放貨、捲揚快到底時停住
     const p = v.job && v.job.to; if (p && p.owner.type === 'machine' && hoistDepth(p) - v.hoist < 0.06) { raiseTransferFault(v); return; } }
   const st = v.state;
@@ -260,7 +262,7 @@ function shiftMove(v, target, dt) {
 
 // ---------- E84 交握（天車 ↔ 機台 Load Port 的訊號確認，SEMI E84）----------
 const E84_TIME = 1.6, E84_END_TIME = 0.8, E84_TIMEOUT = 15;
-const E84_STEPS = { drop: ['HO_AVBL ON → CS_0＋VALID', '等 L_REQ（機台：可以放）', 'TR_REQ', '等 READY'], pick: ['HO_AVBL ON → CS_0＋VALID', '等 U_REQ（機台：可以取）', 'TR_REQ', '等 READY'] };
+const E84_STEPS = { drop: ['HO_AVBL ON → CS_0＋VALID', '等 L_REQ（機台：可以放）', 'TR_REQ', '確認 READY（已亮著）'], pick: ['HO_AVBL ON → CS_0＋VALID', '等 U_REQ（機台：可以取）', 'TR_REQ', '確認 READY（已亮著）'] };
 function e84Text(v) {
   if (v.state === 'e84end') return (v.op === 'pick' ? '取｜' : '放｜') + 'E84：BUSY 關 → COMPT（完成）';
   const port = v.op === 'pick' ? v.job.from : v.job.to;
@@ -277,10 +279,11 @@ function e84Abort(v, port) {
     job.to.reserved = false; job.foup.job = null; jobs.splice(jobs.indexOf(job), 1);
     v.job = null; v.op = null; v.state = 'idle'; v.route = []; v.target = null;
   } else {
-    const free = ports.filter(q => q.owner.type === 'stb' && !q.foup && !q.reserved && usable(q));
-    const nd = nearest(port, free);
+    // 現場：貨從儲位出來時，儲位跟這顆貨的綁定要等它成功上機才解除 → 逾時就回原儲位
+    const home = job.home && job.home.homeJob === job && !job.home.foup ? job.home : null;
+    const nd = home || nearest(port, ports.filter(q => q.owner.type === 'stb' && !q.foup && !q.reserved && usable(q)));
     v.op = null; v.state = 'toDrop';
-    if (nd) { job.to.reserved = false; nd.reserved = true; job.to = nd; log(`↪ 改派 ${job.foup.id} → ${nd.name}`); }
+    if (nd) { job.to.reserved = false; nd.reserved = true; job.to = nd; job.home = null; if (home) home.homeJob = null; log(`↪ ${job.foup.id} ${home ? '回原儲位' : '改派'} → ${nd.name}`); }
     setTarget(v, job.to);
   }
 }
@@ -289,12 +292,16 @@ function e84Abort(v, port) {
 function stepTransfer(v, dt) {
   if (MAINT_STATES.includes(v.state)) return stepMaintVehicle(v, dt);   // 維修區（maintenance.js）
   const port = v.op === 'pick' ? v.job.from : v.job.to;
+  // 取放到一半（BUSY 中）HO_AVBL 中斷：天車立刻停住、卡在 Port 上方（E-204）
+  if (['guardOpen', 'shiftOut', 'lower', 'grip', 'release', 'raise', 'shiftIn'].includes(v.state) && (port.owner.type === 'machine' || port.owner.type === 'ntb') && !hoAvbl(port) && !v.fault) {
+    e204(v, port, port.owner.down ? '機台異常' : port.curtain > simTime ? '光閘遮斷' : 'HO 訊號中斷'); return;
+  }
   switch (v.state) {
     case 'e84': {
       // 天車 → 機台：CS_0、VALID；機台 → 天車：L_REQ（可以放）或 U_REQ（可以取）；天車：TR_REQ；機台：READY
       if (!hoAvbl(port)) {                                            // 機台的 HO_AVBL 是 OFF（機台異常、光閘被擋）：等到逾時就放棄
         v.e84Wait += dt;
-        if (v.e84Wait > E84_TIMEOUT) e84Abort(v, port);
+        if (v.e84Wait > E84_TIMEOUT) e84Abort(v, port);                 // 交握前就沒有 HO：不取放，放貨改送回儲位、取貨取消（現場不報警）
         break;
       }
       v.timer += dt;
@@ -314,13 +321,15 @@ function stepTransfer(v, dt) {
       if (shiftMove(v, port.lat, dt)) v.state = 'lower';
       break;
     case 'lower':
-      if (pendingCurtain && (port.owner.type === 'machine' || port.owner.type === 'ntb') && v.hoist < 0.05) { raiseCurtain(v); return; }   // 教學：下一台開始下降的車碰到光閘遮斷
+      if (pendingCurtain && (port.owner.type === 'machine' || port.owner.type === 'ntb') && v.hoist < 0.05) { raiseCurtain(v); return; }
+      if (pendingHoMid && port.owner.type === 'machine' && v.hoist > 0.3) { hoMidCut(v); return; }   // 教學：下一台開始下降的車碰到光閘遮斷
       if (hoistMove(v, hoistDepth(port), dt)) { v.state = v.op === 'pick' ? 'grip' : 'release'; v.timer = CLAW_TIME; }
       break;
     case 'grip':
       v.timer -= dt; v.claw = Math.min(1, 1 - v.timer / CLAW_TIME);
       if (v.timer <= 0) {
         const f = v.job.foup;
+        if (port.owner.type === 'stb' && v.job.to.owner.type !== 'stb') { port.reserved = true; port.homeJob = v.job; v.job.home = port; homePorts.add(port); }   // 原儲位綁定到這顆貨上機為止
         f.localRot = f.rot - v.group.rotation.y;                 // 保持世界方向不變
         f.carrier = v;                                             // 之後每幀跟著夾爪畫（main.js）
         f.state = 'moving'; port.foup = null; v.carry = f; v.claw = 1; v.state = 'raise';
@@ -422,7 +431,11 @@ const usable = q => !q.owner.down && !q.seg.blocked;
 const MAX_NEW_JOBS = 40;   // 每一輪最多產生幾筆新任務（地圖大時避免一次算太多）
 const NEXT_TOOL_POOL = 12; // 機台下貨送下一台機台時，從最近的幾台空機台裡挑
 const CROSS_ZONE = 0.25;   // 機台下貨送到「任何地方」的機台的機率（多半會跨區塊）
+// 原儲位綁定：搬運結束（上機、清貨、取消）就解除
+const homePorts = new Set();
+function releaseHomes() { for (const p of homePorts) if (!p.homeJob || !jobs.includes(p.homeJob)) { if (p.homeJob && !p.foup) p.reserved = false; p.homeJob = null; homePorts.delete(p); } }
 function dispatch() {
+  releaseHomes();
   stepMaintQueue();                                          // 維修區空出來就叫下一台排隊的車過去
   // 這一輪的空位清單只算一次；被選走的就從清單拿掉
   const freeMachines = [], freeStbs = [];

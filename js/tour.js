@@ -14,15 +14,18 @@ function closeCards() { if (openAlarm) closeAlarmCard(); if (maintCardOpen) clos
 const HMI_SEL = { manual: '[data-a="manual"]', clear: '.aclr', 'servo:walk': '[data-a="servo:walk:on"]', 'servo:hoist': '[data-a="servo:hoist:on"]',
   'jog:walk': '[data-hold="walk:1"]', claw: '[data-a="claw:open"]', 'home:hoist': '[data-a="home:hoist"]', 'home:shift': '[data-a="home:shift"]',
   confirm: '.rec [data-a="confirm"]', release: '.estop', auto: '[data-a="auto"]',
-  cargo: '.rec [data-a="cargo:cart"]', homeall: '[data-a="home:all"]', online: '[data-a="online"]', hand: '.rec [data-a="hand:need"]', hoavbl: '.rec' };
+  cargo: '.rec [data-a^="cargo:"]', homeall: '[data-a="home:all"]', online: '[data-a="online"]', hand: '.rec [data-a="hand:need"]', hoavbl: '.rec', foreign: '.rec [data-a="foreign"]', reboot: '.rec [data-a="reboot"]',
+  'chk:wheel': '.rec [data-a="chk:wheel"]', 'chk:cover': '.rec [data-a="chk:cover"]', 'chk:bumper': '.rec [data-a="chk:bumper"]' };
 const HMI_WHY = {
   manual: '異常排除一定先切「手動」：天車就不會被系統自動叫走，人員才能安全操作。', clear: '按畫面下方紅色的「警報清除」：清掉異常碼，天車同時切成手動，人員才能安全操作各軸（異常碼不清，伺服、各軸都不能動）。',
   'servo:walk': '馬達過載時走行伺服會跳脫（Off），清完警報要再把走行「伺服 On」。', 'servo:hoist': '吊帶異常時捲揚伺服跳脫了，要先把捲揚「伺服 On」，捲揚才能動。',
   'jog:walk': '讀不到條碼，天車不知道自己在哪。手動往前「寸動」一小段，讓讀碼器重新讀到條碼。', claw: '夾爪「開」，人員確認 FOUP 有放正。',
   'home:hoist': '捲揚「原點」：把吊帶和夾爪收回車上。', 'home:shift': '側移「原點」：把滑台收回車子正中間。', confirm: '先確認前方軌道上沒有人員、工具或掉落物，再往下做。',
   release: '把緊急停止解除。',
-  cargo: '看貨物狀況：要清貨就把 FOUP 放到推車（或機台）上，這裡示範放到推車；不清貨可以選「保留在車上」。',
+  cargo: '選賦歸方式：先看紀錄——要上機的貨（放貨）就清貨放到機台上、無貨賦歸；要夾走的貨（取貨）就有貨賦歸，把貨帶走。這裡示範第一個選項。',
   homeall: '按「歸原點」：所有機構依序做一次原點校正，等「原點成功」。', online: '原點成功後「切上線」：天車恢復自動、重新接任務。',
+  'chk:wheel': '到現場檢查走行輪：有沒有磨損、卡異物，軌道面有沒有油污或掉落物。', 'chk:cover': '確認天車外殼／維修蓋蓋好、鎖扣扣好。', 'chk:bumper': '檢查碰撞感測器（保險桿）有沒有被撞到，讓它復位；確認車和貨沒有受損。',
+  foreign: '到 Port 旁檢查 FOUP 上方，拿掉手機、筆等異物。',
   hand: '手動切換到需要的手：轉彎切下手、直行切上手（前、後車都不在彎道內才能換）。', hoavbl: '等機台端復歸、光閘淨空，HO_AVBL 恢復 ON。', auto: '最後「切自動」：系統檢查步驟都完成、各軸都在原點，天車就恢復運行（取放貨會重新做一次）。',
 };
 // 異常排除：依異常碼產生步驟（每一步都用操作介面上的按鈕）
@@ -34,6 +37,8 @@ function recoverySteps() {
       t: '排除：走行寸動，把車移出彎道', x: '前車或後車在彎道內時不能歸原點、也不能切上線。按住「前進」寸動，直到前車、後車都顯示「直線」再放開。', el: '[data-hold="walk:1"]',
       act: { fn: () => { const v = tourV(); if (v.man) v.man.jog = 4; } },
       wait: () => { const v = tourV(), out = !bogieInCurve(v).some(Boolean); if (v.man) v.man.jog = out ? 0 : Math.max(v.man.jog || 0, 1); return out; } });
+    if (s === 'homeall') out.push({ t: '排除：選有／無 FOUP', x: '按「歸原點」之前，要先在它左邊的下拉選單選「有 FOUP」或「無 FOUP」。要跟夾爪上實際一樣：有貨賦歸選有 FOUP，清完貨（無貨賦歸）選無 FOUP。選錯會被擋下來，不能歸原點。', el: '#hmiFoup',
+      act: { fn: () => { const v = tourV(); v.homeFoup = v.carry ? 'yes' : 'no'; renderHmi(); } }, wait: () => { const v = tourV(); return v.homeFoup === (v.carry ? 'yes' : 'no'); } });
     out.push({ t: `排除：${STEP_TXT[s]}`, x: HMI_WHY[s], el: HMI_SEL[s],
       act: s !== 'hoavbl', wait: () => s === 'online' ? !vAlarm(tourV()) && !tourV().manual : stepDone(tourV(), a, s) && !(tourV().man && Object.keys(tourV().man).length) && !tourV().homing });
   }
@@ -85,7 +90,7 @@ const CHAPTERS = [
     { t: '取放貨異常', x: '這次讓「下一台開始夾取或放貨的天車」發生取放貨異常（夾爪、吊帶這類問題）。等一下就會有一台車停在半空中。', pre: () => { closeCards(); closeHmi(); setFollow(null); },
       el: '[data-alarm="transfer"]', act: { fn: () => { pendingTransferFault = { autoFail: true }; log('下一台開始夾取／放貨的天車會發生取放貨異常'); } },
       wait: () => alarms.some(a => a.type === 'transfer' && a.autoRecFailed) },
-    { t: '找到那台車', x: '異常發生了，而且自動復歸失敗。吊帶和夾爪停在下面，可能還夾著 FOUP。我們直接開它的操作介面。', pre: () => { const a = alarms.find(a => a.type === 'transfer'); TOUR.ctx.v = a.target; setFollow(a.target); openHmi(a.target, 'main'); }, el: '#hmi .big' },
+    { t: '找到那台車', x: '異常發生了，而且自動復歸失敗。吊帶和夾爪停在下面，可能還夾著 FOUP。我們直接開它的操作介面。', pre: () => { const a = alarms.find(a => a.type === 'transfer' && a.autoRecFailed) || alarms.find(a => a.type === 'transfer'); if (!a) return; TOUR.ctx.v = a.target; setFollow(a.target); openHmi(a.target, 'main'); }, el: '#hmi .big' },
     { gen: hmiIntroSteps },
     { gen: recoverySteps },
     { t: '完成！', x: '吊帶收回、歸原點成功、切上線以後，天車會把這次取放貨從頭重新做一次（如果貨被清到推車或機台上，這筆搬運就取消，由系統重新安排）。<br>互鎖：有貨又不在放貨位置時按「夾爪開」會被擋下來，因為 FOUP 會掉下去。', el: '#followBar', pre: () => setTimeout(closeHmi, 1500) },
