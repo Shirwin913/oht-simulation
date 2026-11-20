@@ -84,6 +84,7 @@ function gfxTick(now) {
   if (L.fps && now - gfxLast < 1000 / L.fps - 2) return false;           // 省電：最多 30 FPS
   gfxLast = now; gfxFrame++; if (!fpsT) fpsT = now;
   renderer.shadowMap.needsUpdate = L.every > 0 && gfxFrame % L.every === 0;
+  if (renderer.shadowMap.needsUpdate) fitShadow();
   fpsN++; if (now - fpsT >= 1000) {
     GFX.fps = Math.round(fpsN * 1000 / (now - fpsT)); fpsN = 0; fpsT = now;
     const el = document.getElementById('gfxFps'); if (el) el.textContent = `${GFX.fps} FPS（${GFX_LEVELS[GFX.level].name}）`;

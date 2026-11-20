@@ -13,7 +13,7 @@ function foupShape(w, d, rf, rb) {
 const FG = (() => {
   const shell = new THREE.ExtrudeGeometry(foupShape(0.58, 0.58, 0.05, 0.2),
     { depth: 0.46, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.035, bevelSegments: 3, curveSegments: 10 });
-  shell.rotateX(-Math.PI / 2); shell.translate(0, 0.1, 0);
+  shell.rotateX(-Math.PI / 2); shell.translate(0, 0.104, 0);   // 外殼底面比底板頂面高 4 mm：兩個面重疊會閃（Z-fighting）
   // 晶圓堆疊紋理
   const c = document.createElement('canvas'); c.width = 16; c.height = 256;
   const x = c.getContext('2d'); x.fillStyle = '#5b636c'; x.fillRect(0, 0, 16, 256);

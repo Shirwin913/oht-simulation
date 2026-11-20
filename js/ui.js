@@ -94,6 +94,7 @@ $('btnCommInfo').onclick = () => {                                      // 看�
 };
 $('btnE84Info').onclick = () => openInfoCard('e84');
 $('btnE84Demo').onclick = () => startE84Demo();
+$('btnHandDemo').onclick = () => openHandDemo();
 $('apCap').oninput = e => { AP_CAP = +e.target.value; $('apCapVal').textContent = AP_CAP + ' 台'; };
 $('gwCap').oninput = e => { GW_CAP = +e.target.value; $('gwCapVal').textContent = GW_CAP + ' 台'; };
 $('relayCap').oninput = e => { RELAY_CAP = +e.target.value; $('relayCapVal').textContent = RELAY_CAP + ' 台'; };
@@ -124,6 +125,7 @@ $('alarmList').addEventListener('click', e => {
   if (btn.dataset.act === 'info') openAlarmCard(a);
   if (btn.dataset.act === 'view') focusAlarm(a);
   if (btn.dataset.act === 'clear') clearAlarm(a);
+  if (btn.dataset.act === 'notify') notifyEngineer(a);
   updateUI();
 });
 $('alarmBanner').onclick = () => { if (alarms.length) { openAlarmCard(alarms[0]); focusAlarm(alarms[0]); } };

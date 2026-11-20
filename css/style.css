@@ -65,6 +65,8 @@ button.ok:hover { background:#166534; }
 /* 自動復歸 */
 .arec { margin:6px 0; padding:6px 8px; border-radius:6px; font-weight:600; }
 .arec.run { background:rgba(56,189,248,.15); color:#7dd3fc; border:1px solid rgba(56,189,248,.5); }
+.arec.own { background:rgba(250,204,21,.12); color:#fde68a; border:1px solid rgba(250,204,21,.45); font-weight:500; }
+.arec .e204go { margin:4px 4px 0 0; }
 .arec.fail { background:rgba(239,68,68,.15); color:#fca5a5; border:1px solid rgba(239,68,68,.5); }
 /* 優先級 */
 .priBox .alarmBtns button { border-color:rgba(249,115,22,.5); }
@@ -449,3 +451,38 @@ button.ok:hover { background:#166534; }
 #hmi .huser.in .hav svg { fill:#dcfce7; }
 #hmi .huser.in .hun, #hmi .gpcad .huser.in span.hun { background:#dcfce7; color:#166534; border-color:#22c55e; }
 #hmi .huser:hover .hav { filter:brightness(1.12); }
+/* ---------- 看軌道：上手／下手 教學 ---------- */
+#handDemo { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center; background:rgba(2,6,23,.55); }
+#handDemo .hdwin { width:min(1040px,96vw); max-height:94vh; overflow:auto; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,.5); font-size:13px; }
+#handDemo .hdhd { display:flex; align-items:center; padding:10px 14px; border-bottom:1px solid #1e293b; font-weight:700; font-size:15px; }
+#handDemo .hdhd span { flex:1; }
+#handDemo button { background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:6px; padding:5px 11px; cursor:pointer; font:inherit; }
+#handDemo button:hover:not(:disabled) { background:#273449; }
+#handDemo button:disabled { opacity:.4; cursor:default; }
+#handDemo button.pri { background:#2563eb; border-color:#3b82f6; }
+#handDemo .hdtabs { display:flex; flex-wrap:wrap; gap:6px; padding:8px 14px; border-bottom:1px solid #1e293b; }
+#handDemo .hdtabs button { border-radius:999px; font-size:12.5px; }
+#handDemo .hdtabs button.cur { background:#facc15; color:#422006; border-color:#facc15; font-weight:700; }
+#handDemo .hdbd { display:grid; grid-template-columns:1fr 300px; gap:12px; padding:12px 14px; }
+#handDemo svg { width:100%; background:#0b1220; border:1px solid #1e293b; border-radius:8px; }
+#handDemo .hdside { display:flex; flex-direction:column; gap:10px; }
+#handDemo .hdt { font-size:16px; font-weight:700; color:#fde68a; }
+#handDemo .hdsc { float:right; font-size:12px; color:#94a3b8; font-weight:400; }
+#handDemo .hdx { line-height:1.7; color:#cbd5e1; min-height:110px; }
+#handDemo .hdx ol { margin:2px 0 0; padding-left:20px; }
+#handDemo b.up { color:#2dd4bf; } #handDemo b.down { color:#fb7185; }
+#handDemo .hdlamps { display:flex; gap:14px; flex-wrap:wrap; min-height:20px; }
+#handDemo .hdlamps span { display:flex; align-items:center; gap:6px; font-weight:600; }
+#handDemo .hdlamps i { width:12px; height:12px; border-radius:50%; display:inline-block; }
+#handDemo .hddots { display:flex; align-items:center; gap:6px; color:#94a3b8; font-size:12px; }
+#handDemo .hddots i { width:9px; height:9px; border-radius:50%; background:#334155; display:inline-block; }
+#handDemo .hddots i.done { background:#64748b; } #handDemo .hddots i.cur { background:#facc15; }
+#handDemo .hddots span { margin-left:6px; }
+#handDemo .hdctl { display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; }
+#handDemo .hdopts { display:flex; flex-direction:column; gap:6px; }
+#handDemo .hdopts button { text-align:left; padding:8px 12px; }
+#handDemo .hdopts button.ok { background:#065f46; border-color:#10b981; opacity:1; }
+#handDemo .hdopts button.ng { background:#7f1d1d; border-color:#ef4444; opacity:1; }
+#handDemo .hdres { line-height:1.6; padding:8px 10px; border-radius:6px; }
+#handDemo .hdres.ok { background:rgba(16,185,129,.12); color:#a7f3d0; } #handDemo .hdres.ng { background:rgba(239,68,68,.12); color:#fecaca; }
+@media (max-width:820px) { #handDemo .hdbd { grid-template-columns:1fr; } }

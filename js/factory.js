@@ -135,43 +135,57 @@ function makeNtb(seg, dc, zone) {
 }
 
 // ---------- STB 儲格（吊在天花板、軌道內側，天車要側移 STB_OFFSET 才拿得到）----------
-// 一組架子 2 個儲格
+// 現場：一組儲格架大約九格，整組一個框，兩側各四支吊桿（共八個吊掛點）；剩下放不滿九格的長度用比較短的一組補
 const stbs = [];
-function makeStb(seg, dc, name) {
-  // 一組兩格的儲格架：四個角各一支吊桿吊在天花板上（四點吊掛），底板四周有框、遠側和兩端有低矮護欄
-  //   天車從正上方把 FOUP 放下來，所以靠軌道那一側不做護欄
-  const owner = { type: 'stb', name, ports: [] }, g = groupAt(seg, dc), z = STB_OFFSET, hw = 0.475, hl = 1.15, y = STB_TOP;
-  const MET = 0x8d979f, FR = 0x6f7880, ROD = 0xb3bcc4;
-  staticBatch.add(G.stbShelf, MET, g, 0, y - 0.025, z);
-  [-1, 1].forEach(k => staticBatch.add(G.stbRailL, FR, g, 0, y - 0.03, z + k * hw));
-  [-1, 1].forEach(k => staticBatch.add(G.stbRailW, FR, g, k * hl, y - 0.03, z));
-  staticBatch.add(G.stbDivider, FR, g, 0, y + 0.02, z);
-  staticBatch.add(G.stbFenceL, FR, g, 0, y + 0.13, z + hw);                    // 遠側護欄
+const STB_SLOT = 1.15, STB_MAXN = 9, STB_GAP = 0.5;                       // 每格寬、每組最多幾格、兩組之間的空隙
+const stbGeoCache = new Map();
+function stbGeos(n) {                                                      // 依格數做長度不同的底板、框、護欄（同樣長度共用）
+  if (!stbGeoCache.has(n)) { const L = n * STB_SLOT + 0.1;
+    stbGeoCache.set(n, { L, shelf: G.box(L, 0.05, 0.95), railL: G.box(L + 0.06, 0.06, 0.06), fenceL: G.box(L, 0.025, 0.025) }); }
+  return stbGeoCache.get(n);
+}
+function makeStb(seg, dc, name, n) {
+  // 整組一個底板，四周有框；遠側和兩端有低矮護欄（天車從正上方放貨，靠軌道那一側不做護欄）；格與格之間有隔條
+  const owner = { type: 'stb', name, ports: [] }, g = groupAt(seg, dc), z = STB_OFFSET, hw = 0.475, y = STB_TOP;
+  const MET = 0x8d979f, FR = 0x6f7880, ROD = 0xb3bcc4, S = stbGeos(n), hl = S.L / 2;
+  staticBatch.add(S.shelf, MET, g, 0, y - 0.025, z);
+  [-1, 1].forEach(k => staticBatch.add(S.railL, FR, g, 0, y - 0.026, z + k * hw));   // 框比底板高 4 mm：兩個面不能在同一平面，不然會閃
+  [-1, 1].forEach(k => staticBatch.add(G.stbRailW, FR, g, k * hl, y - 0.026, z));
+  for (let i = 1; i < n; i++) staticBatch.add(G.stbDivider, FR, g, (i - n / 2) * STB_SLOT, y + 0.02, z);
+  staticBatch.add(S.fenceL, FR, g, 0, y + 0.13, z + hw);                     // 遠側護欄
   [-1, 1].forEach(k => staticBatch.add(G.stbFenceW, FR, g, k * hl, y + 0.13, z));   // 兩端護欄
-  [[-1, 1], [1, 1], [-1, 0], [1, 0]].forEach(([a, b]) => staticBatch.add(G.stbPost, FR, g, a * hl, y + 0.07, z + b * hw));   // 護欄立柱
-  // 四支吊桿＋天花板吊座
-  [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([a, b]) => {
-    staticBatch.add(G.rod, ROD, g, a * hl, (10.5 + y) / 2, z + b * hw);
-    staticBatch.add(G.stbTopPlate, FR, g, a * hl, 10.48, z + b * hw);
-  });
+  for (let i = 0; i <= n; i += 2) staticBatch.add(G.stbPost, FR, g, Math.min(hl, -hl + i * STB_SLOT), y + 0.07, z + hw);   // 遠側護欄立柱
+  [-1, 1].forEach(k => staticBatch.add(G.stbPost, FR, g, k * hl, y + 0.07, z));
+  // 吊桿＋天花板吊座：兩側各四支（短的組兩支）
+  const hx = n >= 5 ? [-hl, -hl / 3, hl / 3, hl] : [-hl, hl];
+  hx.forEach(x => [-1, 1].forEach(b => {
+    staticBatch.add(G.rod, ROD, g, x, (10.5 + y) / 2, z + b * hw);
+    staticBatch.add(G.stbTopPlate, FR, g, x, 10.48, z + b * hw);
+  }));
   // 每一格：FOUP 定位用的三支 pin（跟 Load Port 一樣）＋靠軌道那一側的狀態燈
-  [-0.55, 0.55].forEach((lx, i) => {
+  for (let i = 0; i < n; i++) {
+    const lx = (i - (n - 1) / 2) * STB_SLOT;
     [[0.25, 0], [-0.15, 0.22], [-0.15, -0.22]].forEach(([px, pz]) => staticBatch.add(G.pin, 0xc9ced4, g, lx + px, y + 0.02, z + pz));
     addPort(seg, dc + lx, STB_OFFSET, STB_TOP, owner, `${name}-${i + 1}`, -1, stbLeds.add(g, lx, y - 0.03, z - hw - 0.02));
-  });
+  }
   stbs.push(owner);
   scene.remove(g);                                                          // STB 群組只用來算位置，不需要留在場景
 }
-// 在一段軌道的 [d0, d1] 範圍內，每 STB_PITCH 公尺排一組 STB（置中排列）
-const STB_PITCH = 2.6;
 const STB_CLEAR = 0.6 + 0.5;   // 儲格中心到架子邊緣 0.6，再留 0.5 公尺：整組架子都要在直線段上，彎道不放儲格
 // seg 上 d 附近 ±r 公尺內都是直線（沒有彎道）
 const straightAround = (seg, d, r) => { for (let t = -r; t <= r; t += 0.1) { const x = d + t; if (x < 0 || x > seg.len || seg.curveAt(x)) return false; } return true; };
-function stbRow(seg, d0, d1, prefix, maxN = 99) {
-  const span = d1 - d0 - 1.1; if (span < 0) return 0;                   // 1.1 ＝ 一組兩個儲格中心的距離
-  const n = Math.min(maxN, Math.floor(span / STB_PITCH) + 1), start = (d0 + d1) / 2 - (n - 1) * STB_PITCH / 2;
-  for (let i = 0; i < n; i++) makeStb(seg, start + i * STB_PITCH, `${prefix}${i + 1}`);
-  return n;
+// 在一段軌道的 [d0, d1]（最外側儲格中心可以到的範圍）排儲格：九格一組，最後剩下的長度用短的一組補（至少三格），整排置中
+function stbRow(seg, d0, d1, prefix) {
+  const span = d1 - d0 + 2 * 0.6;                                         // 架子邊緣可以用的總長度
+  const L9 = stbGeos(STB_MAXN).L, sizes = [];
+  let left = span;
+  while (left >= L9) { sizes.push(STB_MAXN); left -= L9 + STB_GAP; }
+  const m = Math.floor((left - 0.1) / STB_SLOT); if (m >= 3) sizes.push(m);
+  if (!sizes.length) return 0;
+  const total = sizes.reduce((a, n) => a + stbGeos(n).L, 0) + STB_GAP * (sizes.length - 1);
+  let x = (d0 + d1) / 2 - total / 2;
+  sizes.forEach((n, i) => { const L = stbGeos(n).L; makeStb(seg, x + L / 2, `${prefix}${i + 1}`, n); x += L + STB_GAP; });
+  return sizes.length;
 }
 
 // ---------- 依 Bay 擺放：車道外側機台、內側一整排 STB ----------

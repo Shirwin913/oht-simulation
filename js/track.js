@@ -34,11 +34,14 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
   const ALU = new THREE.Color(0xd3d9de), MINT = new THREE.Color(0xa6dcc6);
   const d = new THREE.Object3D();
   samples.forEach(([x0, z0, x1, z1, curve], i) => {
-    const ang = Math.atan2(-(z1 - z0), x1 - x0), len = Math.hypot(x1 - x0, z1 - z0) * 1.06;
+    const ang = Math.atan2(-(z1 - z0), x1 - x0), len = Math.hypot(x1 - x0, z1 - z0) * (curve ? 1.2 : 1.06);   // 彎道外緣比中心線長，片段要拉長一點才不會在外緣留下鋸齒缺口
     const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
     d.rotation.set(0, ang, 0); d.scale.set(len, 1, 1);
+    // 彎道段（淺綠）稍微抬高 3 mm、側壁往內縮 4 mm：分岔／合流處直軌和彎軌重疊時，兩片才不會在同一個平面上互相閃爍（Z-fighting）
+    const lift = curve ? 0.003 : 0, inset = curve ? 0.004 : 0;
     for (const p of parts) {
-      d.position.set(mx + p.oz * Math.sin(ang), H + p.oy, mz + p.oz * Math.cos(ang));
+      const oz = p.oz ? p.oz - Math.sign(p.oz) * inset : 0;
+      d.position.set(mx + oz * Math.sin(ang), H + p.oy + lift, mz + oz * Math.cos(ang));
       d.updateMatrix(); p.im.setMatrixAt(i, d.matrix);
       if (p.colored) p.im.setColorAt(i, curve ? MINT : ALU);
     }
@@ -49,6 +52,11 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
   const along = (every, offset, fn) => segs.forEach(sg => {
     for (let s = offset; s < sg.len - 0.2; s += every) { if (onLifter(sg, s, LIFT_HALF + 0.6)) continue; const f = frameAt(sg, s); fn(f); }
   });
+  // 分岔、合流處兩段軌道疊在一起：吊架、固定座各段各算會重複放在同一個位置，所以太靠近已經放過的就跳過
+  const spaced = r => { const cell = new Map(), key = (i, j) => i * 100003 + j;
+    return (x, z) => { const i = Math.floor(x / r), j = Math.floor(z / r);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [px, pz] of cell.get(key(i + a, j + b)) || []) if (Math.hypot(px - x, pz - z) < r) return false;
+      const k = key(i, j); if (!cell.has(k)) cell.set(k, []); cell.get(k).push([x, z]); return true; }; };
   const placeInst = (geo, material, list) => {
     const im = new THREE.InstancedMesh(geo, material, list.length); im.castShadow = true; im.frustumCulled = false;
     list.forEach(([x, y, z, ang, sy], i) => { d.position.set(x, y, z); d.rotation.set(0, ang, 0); d.scale.set(1, sy || 1, 1); d.updateMatrix(); im.setMatrixAt(i, d.matrix); });
@@ -56,11 +64,13 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
   };
   // 軌道頂部兩側邊緣的小固定座（每 2 公尺一組）
   const clamps = [];
-  along(2, 1, f => [-0.27, 0.27].forEach(oz => clamps.push([f.x + oz * f.nx, H + 0.185, f.z + oz * f.nz, f.th])));
+  const clampOk = spaced(0.35);
+  along(2, 1, f => [-0.27, 0.27].forEach(oz => { const x = f.x + oz * f.nx, z = f.z + oz * f.nz; if (clampOk(x, z)) clamps.push([x, H + 0.185, z, f.th]); }));
   placeInst(new THREE.BoxGeometry(0.12, 0.07, 0.07), mat(0xc9ced3, { metalness: 0.65, roughness: 0.3 }), clamps);
   // 吊架＋軌道上方固定座（每 4 公尺）
   const hangers = [], brackets = [];
-  along(4, 0.5, f => { hangers.push([f.x, H + (10.5 - H) / 2, f.z, 0, 10.5 - H]); brackets.push([f.x, H + 0.2, f.z, f.th]); });
+  const hangOk = spaced(1.6);
+  along(4, 0.5, f => { if (!hangOk(f.x, f.z)) return; hangers.push([f.x, H + (10.5 - H) / 2, f.z, 0, 10.5 - H]); brackets.push([f.x, H + 0.2, f.z, f.th]); });
   placeInst(new THREE.CylinderGeometry(0.05, 0.05, 1, 6), mat(0x8a949d, { metalness: 0.5 }), hangers);
   placeInst(new THREE.BoxGeometry(0.28, 0.1, 0.72), mat(0xc7cdd3, { metalness: 0.6 }), brackets);
 

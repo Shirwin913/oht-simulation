@@ -58,11 +58,11 @@ const ALARM_INFO = {
     { code: 'M-301', title: '機台當機',
       what: '機台本身發生異常停機（製程、硬體或軟體問題），Load Port 不能上下貨。',
       impact: '機台上的 FOUP 出不去；本來要送來這台機台的 FOUP 要改送別台機台或先放 STB 暫存（改派）；派車系統要避開這台機台。',
-      steps: ['機台工程師處理機台異常', '在 MES 把機台狀態改為停機（DOWN），派車系統就不會再派貨過來', '已經在路上的搬運任務改派到其他機台或 STB', '修好、確認後恢復機台狀態，派車系統才會再送貨'] },
+      steps: ['CIM：確認是設備（機台）的問題 → 通知設備工程師到現場處理', '設備工程師：處理機台異常、賦歸 Load Port（CIM 不賦歸機台）', '機台停機期間，派車系統避開這台機台；路上的任務改派到其他機台或 STB', '如果有天車正在這台機台上下貨被中斷（E-204），CIM 只賦歸天車，不用等機台修好', '設備工程師修好、確認後，機台恢復，派車系統才會再派貨過來'], owner: '設備工程師' },
     { code: 'M-302', title: 'Load Port 門開關異常',
       what: 'Load Port 開關 FOUP 門的機構異常，這台機台的 Port 暫時不能用。',
       impact: '跟機台當機一樣：要送來的貨要改派，機台上的 FOUP 卡住出不去。',
-      steps: ['設備工程師檢查 Load Port 開門機構與感測器', '在系統把 Port／機台狀態設為不可用', '已經在路上的任務改派', '修好後恢復狀態'] },
+      steps: ['CIM：確認是 Load Port（設備）的問題 → 通知設備工程師到現場處理', '設備工程師：檢查 Load Port 開門機構與感測器、賦歸 Load Port', '這個 Port 暫停收送貨，路上的任務改派', '如果有天車正在這個 Port 上下貨被中斷（E-204），CIM 只賦歸天車', '設備工程師修好後恢復'], owner: '設備工程師' },
   ],
   track: [
     { code: 'T-401', title: 'Bay 軌道維修封鎖',
@@ -162,7 +162,7 @@ function hoMidCut(v) { pendingHoMid = false; const p = transferPort(v); p.hoOff 
 const E204_INFO = { code: 'E-204', title: '取放貨中斷：HO_AVBL OFF（光閘遮斷／機台異常）',
   what: '天車在機台 Load Port 取放貨時，機台送來的 E84 訊號 HO_AVBL（可以交握）突然變 OFF。常見原因：Load Port 前面的光閘被擋到（人員、手推車、工具伸進去），或是機台本身異常。',
   impact: '天車立刻停止捲揚動作，吊帶和夾爪停在半空中，這次取放貨失敗；後面的車在 Bay 裡排隊。機台端也會跳警報。',
-  steps: ['確認光閘區域淨空（沒有人員、物品擋住）', '到機台端排除異常、讓 HO_AVBL 恢復 ON', '天車操作介面：警報清除 → 捲揚原點 → 側移原點 → 切自動', '天車會重新做一次 E84 交握再取放貨'] };
+  steps: ['確認原因：光閘區域有沒有人員、物品擋住，或是機台故障', '機台／Load Port 故障是設備問題：通知設備工程師到現場，Load Port 由設備工程師賦歸', 'CIM 不用等 HO 恢復，直接賦歸天車：警報清除 → 選有／無貨賦歸 → 捲揚、側移回原點 → 歸原點 → 切上線', '切上線後天車重新做 E84 交握；HO 還沒恢復就逾時，貨回原儲位'] };
 let pendingCurtain = false;
 const transferPort = v => v.job ? (v.op === 'pick' ? v.job.from : v.job.to) : null;
 const hoAvbl = p => !!p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && !p.owner.down && !(p.curtain > simTime) && !(p.hoOff > simTime) && (p.owner.type !== 'ntb' || p.gate <= 0.001);   // 機台給的 HO_AVBL
@@ -270,11 +270,20 @@ function raiseMachineDown(m, opts) {
   if (!m) return null;
   const a = raiseAlarm('machine', pickInfo('machine'), m, `機台 ${m.name}`, opts);
   m.down = a;
+  if (opts.auto) { a.autoClearAt = null; notifyEngineer(a, 150 + rndA() * 150); }   // 自動異常：當作已經通知設備工程師
   // 機台異常 → HO_AVBL OFF：正在這台機台的 Load Port 上取放貨的天車也跟著中斷
   for (const v of vehicles) if (!v.fault && ['lower', 'grip', 'release', 'raise'].includes(v.state) && transferPort(v) && transferPort(v).owner === m) e204(v, transferPort(v), '機台異常');
   reassignJobs(a, q => q.owner === m);
   return a;
 }
+// 設備（機台／Load Port）問題：CIM 通知設備工程師到現場，由設備工程師修機台、賦歸 Load Port
+function notifyEngineer(a, after) {
+  if (a.notified != null) return;
+  a.notified = simTime; a.fixAt = simTime + (after != null ? after : 600 + rndA() * 900);
+  log(`📞 已通知設備工程師到 ${a.target.name} 處理（${a.info.title}）`);
+  if (typeof renderAlarms === 'function') renderAlarms();
+}
+const e204Of = m => alarms.filter(x => x.info === E204_INFO && x.port && x.port.owner === m);
 function raiseTrackBlock(seg, opts) {
   // 可以封鎖的區段：Bay（裡面的機台、儲格暫時不能用）、區塊連接線（跨區要繞路）
   if (!seg) {
@@ -377,6 +386,7 @@ function alarmTick(simDt) {
     if (a.autoRec.ok) { log(`🔄 ${a.target.id} 自動復歸成功（${a.info.code}），繼續運行`); a.autoRecovered = true; a.autoRec = null; clearAlarm(a); }
     else { a.autoRec = null; a.autoRecFailed = true; hmiHistory(a.target, 'Warning', '0762', '自動復歸失敗（教學）', a.id); log(`✋ ${a.target.id} 自動復歸失敗（${a.info.code}），需要人員到現場復歸`); }
   }
+  for (const a of alarms.slice()) if (a.type === 'machine' && a.fixAt && simTime >= a.fixAt) { log(`🛠 設備工程師修好 ${a.target.name}，Load Port 已賦歸`); clearAlarm(a); }
   for (const a of alarms.slice()) if (a.autoClearAt && simTime >= a.autoClearAt) {
     if (a.type === 'vehicle' && rndA() < 0.4) sendToMaint(a);     // 約四成的天車故障要送維修區
     else clearAlarm(a);
@@ -423,7 +433,7 @@ function renderAlarms() {
   el.innerHTML = alarms.length ? alarms.map(a => `<div class="alarm" data-id="${a.id}">
       <div><b>⚠ ${a.info.code}</b> ${a.info.title}${a.auto ? ' <span class="mut">（自動）</span>' : ''}</div>
       <div class="mut">${a.label} · 已經 ${fmtDur(simTime - a.start)}${a.autoClearAt ? ` · ${fmtDur(a.autoClearAt - simTime)} 後自動復歸` : ''}</div>
-      <div class="btns"><button data-act="info">說明</button><button data-act="view">查看位置</button><button data-act="clear" class="ok">復歸</button></div>
+      <div class="btns"><button data-act="info">說明</button><button data-act="view">查看位置</button>${a.type === 'machine' ? (a.notified != null ? `<span class="mut">設備工程師處理中・約 ${fmtDur(Math.max(0, a.fixAt - simTime))}</span>` : '<button data-act="notify" class="ok">通知設備工程師</button>') : '<button data-act="clear" class="ok">復歸</button>'}</div>
     </div>`).join('') : '<div class="mut">目前沒有異常</div>';
   ban.style.display = alarms.length ? 'block' : 'none';
   ban.textContent = `⚠ 目前 ${alarms.length} 件異常 — 點這裡看說明`;
@@ -441,18 +451,23 @@ function renderAlarmCard() {
   c.innerHTML = `<div class="hd"><span>⚠ ${a.info.code}　${a.info.title}</span><button id="acClose">✕</button></div>
     <div class="mut">${ALARM_TYPE_NAME[a.type]} · ${a.label} · 已經 ${fmtDur(simTime - a.start)}</div>
     ${a.autoRec ? `<div class="arec run">🔄 自動復歸中…（天車自己重試，約 ${Math.ceil(a.autoRec.t)} 秒）</div>` : a.autoRecFailed ? '<div class="arec fail">✋ 自動復歸失敗：需要人員到現場，用天車操作介面「警報清除」後手動復歸</div>' : ''}
+    ${a.info.owner ? `<div class="arec own">負責：${a.info.owner}（CIM 不賦歸機台，只要通知設備工程師）${a.notified != null ? `<br>📞 已通知，設備工程師處理中・約 ${fmtDur(Math.max(0, a.fixAt - simTime))} 後修好` : ''}</div>` : ''}
+    ${a.type === 'machine' && e204Of(a.target).length ? `<div class="arec fail">這台機台故障時有天車正在上下貨，卡在 Port 上方（E-204），要由 CIM 賦歸：${e204Of(a.target).map(x => `<button class="e204go" data-id="${x.id}">天車 ${x.target.id}</button>`).join(' ')}</div>` : ''}
+    ${a.info === E204_INFO && a.port && a.port.owner.down ? `<div class="arec fail">機台 ${a.port.owner.name} 故障中：Load Port 等設備工程師處理，CIM 直接賦歸天車，不用等 HO 恢復</div>` : ''}
     <h4>發生了什麼</h4><p>${a.info.what}</p>
     <h4>會造成什麼影響</h4><p>${a.info.impact}</p>
     <ul class="impact">${alarmImpact(a).map(t => `<li>${t}</li>`).join('')}</ul>
     <h4>現場一般怎麼處理</h4><ol>${a.info.steps.map(t => `<li>${t}</li>`).join('')}</ol>
     <p class="mut">以上是一般 AMHS 的通用做法，實際處理以各廠 SOP 為準。</p>
-    <div class="btns"><button id="acView">查看位置</button>${a.type === 'vehicle' || a.type === 'transfer' ? '<button id="acHmi" class="hmiBtn">開操作介面（現場排除）</button>' : ''}${a.type === 'vehicle' ? '<button id="acMaint">送維修區</button>' : ''}<button id="acClear" class="ok">處理完成，復歸</button></div>
+    <div class="btns"><button id="acView">查看位置</button>${a.type === 'vehicle' || a.type === 'transfer' ? '<button id="acHmi" class="hmiBtn">開操作介面（現場排除）</button>' : ''}${a.type === 'vehicle' ? '<button id="acMaint">送維修區</button>' : ''}${a.type === 'machine' ? (a.notified != null ? '<button id="acClear">（模擬）設備工程師修好了</button>' : '<button id="acNotify" class="ok">📞 通知設備工程師</button>') : '<button id="acClear" class="ok">處理完成，復歸</button>'}</div>
     ${a.type === 'vehicle' ? '<p class="mut">「復歸」＝現場排除後直接重新上線；「送維修區」＝復歸後開到車輛維修區，用捲揚機放到地面檢修。</p>' : ''}`;
   c.style.display = 'block';
   document.getElementById('acClose').onclick = closeAlarmCard;
   document.getElementById('acView').onclick = () => focusAlarm(a);
   if (a.type === 'vehicle' || a.type === 'transfer') document.getElementById('acHmi').onclick = () => { const v = a.target; closeAlarmCard(); setFollow(v); openHmi(v, 'main'); };
-  document.getElementById('acClear').onclick = () => clearAlarm(a);
+  const ac = document.getElementById('acClear'); if (ac) ac.onclick = () => { if (a.type === 'machine') log(`🛠 設備工程師修好 ${a.target.name}，Load Port 已賦歸`); clearAlarm(a); };
+  const an = document.getElementById('acNotify'); if (an) an.onclick = () => { notifyEngineer(a); renderAlarmCard(); };
+  c.querySelectorAll('.e204go').forEach(b => b.onclick = () => { const x = alarms.find(y => y.id === +b.dataset.id); if (x) openAlarmCard(x); });
   if (a.type === 'vehicle') document.getElementById('acMaint').onclick = () => { const v = a.target; sendToMaint(a); openMaintCard(); focusMaint(LIFTERS.slice().sort((p, q) => planRoute(v, p.seg, p.d).dist - planRoute(v, q.seg, q.d).dist)[0]); };
 }
 function openAlarmCard(a) { maintCardOpen = false; openAlarm = a; renderAlarmCard(); }

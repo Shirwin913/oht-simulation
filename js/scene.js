@@ -35,7 +35,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;   // 陰影由主迴圈依畫質決定多久更新一次
 app.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 900);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.25, 900);   // near 不要太小：深度精度才夠，重疊的面比較不會閃
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.495;
@@ -49,7 +49,25 @@ const sun = new THREE.DirectionalLight(0xffffff, 0.85);
 sun.position.set(25, 60, 20); sun.castShadow = true;
 sun.shadow.mapSize.set(4096, 4096);
 Object.assign(sun.shadow.camera, { left: -92, right: 92, top: 58, bottom: -58, near: 1, far: 170 });
-scene.add(sun);
+sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02;                   // 減少陰影紋路（shadow acne）
+scene.add(sun); scene.add(sun.target);
+// 陰影範圍跟著鏡頭：拉近看的時候陰影貼圖只涵蓋鏡頭附近，解析度高很多、比較不會有鋸齒。
+// 中心點對齊陰影貼圖的像素格，平移鏡頭時陰影邊緣才不會一直閃。
+const SUN_DIR = new THREE.Vector3(25, 60, 20).normalize();
+const _sr = new THREE.Vector3(), _su = new THREE.Vector3(), _sc = new THREE.Vector3();
+function fitShadow() {
+  if (!sun.castShadow || BENCH) return;
+  const dist = camera.position.distanceTo(controls.target);
+  const half = Math.min(92, Math.max(24, Math.pow(2, Math.ceil(Math.log2(dist * 2.5)))));   // 一段一段跳（2 的次方），拉近拉遠時陰影不會一直微微變動
+  const texel = 2 * half / sun.shadow.mapSize.x;
+  _sr.crossVectors(SUN_DIR, new THREE.Vector3(0, 1, 0)).normalize(); _su.crossVectors(_sr, SUN_DIR).normalize();
+  const t = controls.target, a = Math.round(t.dot(_sr) / texel) * texel, b = Math.round(t.dot(_su) / texel) * texel, c = t.dot(SUN_DIR);
+  _sc.copy(_sr).multiplyScalar(a).addScaledVector(_su, b).addScaledVector(SUN_DIR, c);
+  sun.target.position.copy(_sc); sun.position.copy(_sc).addScaledVector(SUN_DIR, 90);
+  sun.target.updateMatrixWorld();
+  const cam = sun.shadow.camera;
+  if (cam.right !== half) { cam.left = -half; cam.right = half; cam.top = half; cam.bottom = -half; cam.far = 200; cam.updateProjectionMatrix(); }
+}
 
 function applyGfx(level, why) {
   const L = GFX_LEVELS[level]; if (!L) return; GFX.level = level; GFX.lod = L.lod;
