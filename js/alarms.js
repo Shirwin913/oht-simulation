@@ -136,8 +136,9 @@ const FOREIGN = { phone: ['手機', () => { const g = new THREE.Group(); const b
 function raiseForeignObject(kind) {                                   // 產線人員把手機／筆放在等著被取走的 FOUP 上
   const ps = ports.filter(p => p.owner.type === 'machine' && p.foup && !p.foup.empty && !p.foup.foreign);
   // 先挑天車已經在路上要來取的，再挑做完在等取的，最後挑最快做完的
-  const p = ps.find(q => q.foup.job && q.foup.job.vehicle) || ps.find(q => q.foup.state !== 'processing')
-    || ps.filter(q => q.foup.state === 'processing').sort((x, y) => x.foup.timer - y.foup.timer)[0];
+  const busy = q => ['docking', 'processing', 'undocking'].includes(q.foup.state);   // 對接、加工、退出中的 FOUP 在機台裡，人員放不了東西
+  const p = ps.find(q => q.foup.job && q.foup.job.vehicle) || ps.find(q => q.foup.state === 'ready')
+    || ps.filter(busy).sort((x, y) => x.foup.timer - y.foup.timer)[0];
   if (!p) { log('目前沒有在機台 Port 上等著被取走的 FOUP'); return null; }
   kind = kind || (rndA() < 0.5 ? 'phone' : 'pen');
   const [name, make] = FOREIGN[kind], f = p.foup, m = make();

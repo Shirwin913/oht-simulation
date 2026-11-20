@@ -34,7 +34,6 @@ const FG = (() => {
   solidB.add(new THREE.BoxGeometry(0.2, 0.05, 0.2), 0x3a4047, null, 0, 0.625, 0);         // 頂部 OHT flange
   solidB.add(new THREE.BoxGeometry(0.38, 0.03, 0.32), 0x3a4047, null, 0, 0.665, 0);
   return {
-    door: new THREE.BoxGeometry(.035,.5,.6), doorMat: mat(0xe0600a,{transparent:true,opacity:.65}),
     shellAll: shellB.geometry(), solid: solidB.geometry(),
     shellMat: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, emissive: 0x6a2400, emissiveIntensity: 0.45, roughness: 0.12,
       metalness: 0, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }),
@@ -61,7 +60,6 @@ const FB = (() => {
     [FG.tagGeo, tagMat, M(0, 0.685, 0), false],
     [FG.shellAll, FG.shellMat, M(0, 0, 0), false],
     [new THREE.BoxGeometry(.035,.5,.6), mat(0xe0600a,{transparent:true,opacity:.6,depthWrite:false}), M(.335,.33,0), false],
-    [FG.door, FG.doorMat, M(.335,.33,0), false],
   ].map(([geo, material, local, cast]) => {
     const im = new THREE.InstancedMesh(geo, material, FOUP_MAX);
     im.frustumCulled = false; im.castShadow = cast; im.count = 0;

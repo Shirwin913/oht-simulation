@@ -712,9 +712,10 @@ let hmiHold = false, hmiPos = null;
 //   （SEMI E84 標準是收到天車的 TR_REQ 之後才打開 READY；這裡照現場看到的燈號做）
 function portReadyLamp(p, op) {
   if (!p || !(p.owner.type === 'machine' || p.owner.type === 'ntb') || !hoAvbl(p)) return 0;
-  if (op === 'pick') return p.foup && p.foup.state !== 'processing' ? 1 : 0;
+  const busy = f => ['docking', 'processing', 'undocking'].includes(f.state);   // 對接、加工、退出中都不能取
+  if (op === 'pick') return p.foup && !busy(p.foup) ? 1 : 0;
   if (op === 'drop') return p.foup ? 0 : 1;
-  return !p.foup || p.foup.state !== 'processing' ? 1 : 0;
+  return !p.foup || !busy(p.foup) ? 1 : 0;
 }
 function e84Signals(v) {
   const p = transferPort(v), atMachine = p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && (v.state === 'e84' || TRANSFERRING.includes(v.state));
