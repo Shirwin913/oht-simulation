@@ -15,7 +15,7 @@ function updateVisuals(t) {
     else if (p.e84) setLed(p.ledMat, C.cyan, 1.8 * (0.5 + 0.5 * Math.sin(t * 14)));   // E84 交握中：青燈快閃
     else if (p.reserved && !f) setLed(p.ledMat, C.blue, 1.2);
     else if (!f) setLed(p.ledMat, C.off, 0);
-    else if (f.state === 'processing') setLed(p.ledMat, C.green, 1.1);
+    else if (['docking','processing','undocking'].includes(f.state)) setLed(p.ledMat, C.green, 1.1);
     else if (f.state === 'ready') setLed(p.ledMat, C.amber, 1.4 * pulse);
     else if (f.state === 'ntbOut') setLed(p.ledMat, C.amber, 1.4 * pulse);
     else if (f.state === 'buffered') setLed(p.ledMat, C.purple, 1.2);
@@ -23,7 +23,7 @@ function updateVisuals(t) {
   }
   ledBanks.forEach(b => b.sync());                                   // 合併後的指示燈寫回顏色
   for (const m of machines) {
-    const run = m.ports.some(p => p.foup && p.foup.state === 'processing');
+    const run = m.ports.some(p => p.foup && ['docking','processing','undocking'].includes(p.foup.state));
     const wait = m.ports.some(p => p.foup && p.foup.state === 'ready');
     if (m.down) { m.lights[0].emissiveIntensity = 1.8 * pulse; m.lights[1].emissiveIntensity = m.lights[2].emissiveIntensity = 0.05; continue; }  // 當機：紅燈閃
     m.lights[2].emissiveIntensity = run ? 1.6 : 0.05;

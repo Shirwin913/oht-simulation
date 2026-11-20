@@ -180,7 +180,8 @@ function hmiCargo(v, a, where) {
     placeFoupAt(f, port); port.foup = f; port.reserved = false; f.port = port;
     if (v.op === 'pick') f.state = 'ready';                                // 放回原本要取貨的 Port：等重新派車
     else if (port.owner.type === 'stb') { f.state = 'buffered'; f.timer = STB_DWELL * (0.3 + rndD() * 0.7); }
-    else { f.state = 'processing'; f.timer = procTime * (0.7 + rndD() * 0.6); completed++; }
+    else if (port.owner.type === 'ntb') f.state = 'ntbOut';
+    else { machineCycleStart(port, f, procTime * (0.7 + rndD() * 0.6)); completed++; }
     log(`🧑‍🔧 ${v.id} 清貨：人員把 ${f.id} 放到 ${port.name}`);
   } else {
     setFoupMatrix(f, new THREE.Matrix4().makeScale(0, 0, 0)); f.state = 'cart'; f.port = null;

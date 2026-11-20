@@ -1,7 +1,7 @@
 // config.js — 基本參數與全域狀態（軌道幾何在 network.js）
 
 // ================== 基本參數 ==================
-const H = 6.2;           // 軌道高度
+const H = 7.5;           // 軌道高度
 const VLEN = 2.4;        // 車長（含前後保險桿約 2.24）
 const MIN_GAP = 0.6;     // 前後車最小間距
 const A = 1.6;           // 加速度
@@ -18,7 +18,7 @@ const GUARD_TIME = 0.5;  // 防墜擋片開／關時間
 const CLAW_TIME = 0.9;   // 夾爪開／合時間
 // --- 高度 ---
 const PORT_TOP = 1.02;   // Load Port 表面高度
-const STB_TOP = 4.3;     // STB（軌道旁暫存架）表面高度
+const STB_TOP = H - 1.9;     // STB（軌道旁暫存架）表面高度
 const STB_OFFSET = 1.1;  // STB 離軌道中心的側向距離
 const STB_DWELL = 2400;   // FOUP 放在 STB 暫存的最長時間（秒，實際隨機 30%~100%）
 const FOUP_OFF = 0.74;   // FOUP 原點到夾爪距離

@@ -13,7 +13,7 @@ const screenBatch = makeBatch();                  // 機台螢幕（會發光）
 const portLeds = makeLedBank(new THREE.BoxGeometry(0.6, 0.08, 0.05));
 const stbLeds = makeLedBank(new THREE.BoxGeometry(0.5, 0.05, 0.03));
 const lcLeds = makeLedBank(new THREE.BoxGeometry(0.014, 0.66, 0.022));   // 光閘柱上的指示燈條：綠＝正常、紅＝被遮斷
-let pendingLc = null, pendingPio = null;
+let pendingLc = null, pendingPio = null, pendingDeck = null;
 // E84 光通訊器（PIO）：機台端那一顆裝在機台頂部（靠軌道那一側的邊緣）、朝上，對著天車車頂側邊那一顆；NTB 裝在台體頂框上
 //   PIO_X＝沿軌道方向離 Port 中心的距離（天車那顆裝在同樣的位置，停在 Port 上方時兩顆對準）
 const PIO_X = 0.3;
@@ -43,14 +43,22 @@ function addPort(seg, d, lat, top, owner, name, doorSide, ledMat) {
   const p = { id: ports.length, name, seg, d, lat, top, owner, foup: null, reserved: false, ledMat,
     x: f.x + lat * f.nx, z: f.z + lat * f.nz, rot: facing(f, doorSide) };
   if (owner.type === 'machine' || owner.type === 'ntb') { p.lcLeds = pendingLc; pendingLc = null; if (pendingPio) { p.pioLed = pendingPio.led; p.pio3 = pendingPio.three; p.pioPos = pendingPio.pos; pendingPio = null; } }
+  if (owner.type === 'machine') { p.deck = pendingDeck; p.dock = 0; pendingDeck = null; }
   ports.push(p); owner.ports.push(p); return p;
 }
 const LC_Z = 0.46;                                   // 光閘在 Load Port 靠走道那一側（區域座標 z）
 // Load Port 外觀（群組 g 的區域座標，x 沿軌道、z 側向）
-function portMesh(g, lx, ledSide, pio) {
+function portMesh(g, lx, ledSide, pio, moving = false) {
   staticBatch.add(G.portBase, 0x7d8894, g, lx, 0.5, 0);
-  staticBatch.add(G.portPlate, 0x2a3138, g, lx, 1.0, 0);
-  [[0.25, 0], [-0.15, 0.22], [-0.15, -0.22]].forEach(([px, pz]) => staticBatch.add(G.pin, 0xc9ced4, g, lx + px, 1.04, pz));
+  if (moving) {
+    const deck = new THREE.Group(); deck.position.x = lx; g.add(deck);
+    const plate = new THREE.Mesh(G.portPlate, mat(0x2a3138, {metalness:.4})); plate.position.y = 1.0; deck.add(plate);
+    [[.25,0],[-.15,.22],[-.15,-.22]].forEach(([x,z]) => { const pin = new THREE.Mesh(G.pin,mat(0xc9ced4)); pin.position.set(x,1.04,z);deck.add(pin); });
+    pendingDeck = deck;
+  } else {
+    staticBatch.add(G.portPlate, 0x2a3138, g, lx, 1.0, 0);
+    [[.25,0],[-.15,.22],[-.15,-.22]].forEach(([px,pz]) => staticBatch.add(G.pin,0xc9ced4,g,lx+px,1.04,pz));
+  }
   // 光閘：Load Port 靠走道那一側的兩根柱子（發射器／接收器），中間有看不見的光束；有東西擋到就會讓 E84 的 HO_AVBL 掉下來
   pendingLc = [-1, 1].map(k => {
     staticBatch.add(G.lcPost, 0x2b3036, g, lx + k * 0.42, 1.45, LC_Z); staticBatch.add(G.lcCap, 0xf59e0b, g, lx + k * 0.42, 1.87, LC_Z);
@@ -88,7 +96,7 @@ function makeMachine(seg, dc, name) {
   });
   const lb = makeLabel(name, { scale: 0.8 }); lb.position.set(0, 3.9, zc); g.add(lb); labels.push(lb);
   g.updateMatrixWorld(true); lb.userData.wp = lb.getWorldPosition(new THREE.Vector3()); machineLabels.push(lb);
-  [-0.95, 0.95].forEach((lx, i) => addPort(seg, dc + lx, 0, PORT_TOP, m, `${name}-P${i + 1}`, side, portMesh(g, lx, -side, { y: 3.0, z: -0.8 })));
+  [-0.95, 0.95].forEach((lx, i) => addPort(seg, dc + lx, 0, PORT_TOP, m, `${name}-P${i + 1}`, side, portMesh(g, lx, -side, { y: 3.0, z: -0.8 }, true)));
   machines.push(m);
 }
 

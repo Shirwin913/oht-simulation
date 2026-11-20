@@ -5,6 +5,7 @@ const $ = id => document.getElementById(id);
 let lastStock = -1;
 function updateUI() {
   updateNtbUI();
+  updateProcessUI();
   $('simTime').textContent = fmt(simTime);
   $('done').textContent = completed;
   $('tph').textContent = simTime > 60 ? Math.round(completed / (simTime / 3600)) : '–';

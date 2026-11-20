@@ -27,13 +27,14 @@ const FG = (() => {
   // 效能：外殼＋門合併成一個半透明網格；底板、握把、flange 合併成一個不透明網格（顏色存在頂點上）
   const shellB = makeBatch();
   shellB.add(shell, 0xff7a18, null, 0, 0, 0);
-  shellB.add(new THREE.BoxGeometry(0.035, 0.5, 0.6), 0xe0600a, null, 0.335, 0.33, 0);      // 門
+  // FOUP 門獨立繪製，讓 FIMS 對接時能下降開門。
   const solidB = makeBatch();
   solidB.add(new THREE.BoxGeometry(0.64, 0.05, 0.62), 0x8d939a, null, 0, 0.035, 0);       // 底板
   [-1, 1].forEach(k => solidB.add(new THREE.BoxGeometry(0.3, 0.3, 0.03), 0x6f757c, null, -0.05, 0.33, k * 0.355)); // 兩側握把
   solidB.add(new THREE.BoxGeometry(0.2, 0.05, 0.2), 0x3a4047, null, 0, 0.625, 0);         // 頂部 OHT flange
   solidB.add(new THREE.BoxGeometry(0.38, 0.03, 0.32), 0x3a4047, null, 0, 0.665, 0);
   return {
+    door: new THREE.BoxGeometry(.035,.5,.6), doorMat: mat(0xe0600a,{transparent:true,opacity:.65}),
     shellAll: shellB.geometry(), solid: solidB.geometry(),
     shellMat: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, emissive: 0x6a2400, emissiveIntensity: 0.45, roughness: 0.12,
       metalness: 0, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }),
@@ -59,23 +60,39 @@ const FB = (() => {
     [FG.labelGeo, FG.label, M(0.355, 0.47, -0.14, Math.PI / 2), false],
     [FG.tagGeo, tagMat, M(0, 0.685, 0), false],
     [FG.shellAll, FG.shellMat, M(0, 0, 0), false],
+    [new THREE.BoxGeometry(.035,.5,.6), mat(0xe0600a,{transparent:true,opacity:.6,depthWrite:false}), M(.335,.33,0), false],
+    [FG.door, FG.doorMat, M(.335,.33,0), false],
   ].map(([geo, material, local, cast]) => {
     const im = new THREE.InstancedMesh(geo, material, FOUP_MAX);
     im.frustumCulled = false; im.castShadow = cast; im.count = 0;
     scene.add(im); return { im, local };
   });
+  parts[5].im.renderOrder = 2;
   parts[4].im.renderOrder = 2;                                           // 半透明外殼最後畫
-  return { parts, tag: parts[3].im, used: 0, free: [], tmp: new THREE.Matrix4(), dirty: false };
+  return { parts, tag: parts[3].im, used: 0, free: [], tmp: new THREE.Matrix4(), local: new THREE.Matrix4(), foups: new Map(), dirty: false };
 })();
 // 設定某個 FOUP 的世界矩陣
 function setFoupMatrix(f, m) {
-  for (const p of FB.parts) { if (f.empty && p === FB.parts[1]) FB.tmp.makeScale(0,0,0); else FB.tmp.multiplyMatrices(m, p.local); p.im.setMatrixAt(f.idx, FB.tmp); }
+  FB.foups.set(f.idx,f);
+  if (!f.worldMatrix) f.worldMatrix = new THREE.Matrix4(); f.worldMatrix.copy(m);
+  const count = f.empty ? 0 : (f.waferCount ?? 25), open = f.doorOpen || 0;
+  for (let i=0;i<FB.parts.length;i++) {
+    const p = FB.parts[i]; FB.local.copy(p.local);
+    if (i===1) {
+      if (f.detailedWafers || count===0) FB.tmp.makeScale(0,0,0);
+      else { FB.local.makeScale(1,count/25,1); FB.local.setPosition(.02,.14+.18*count/25,0); FB.tmp.multiplyMatrices(m,FB.local); }
+    } else {
+      if (i===2 || i===5) { FB.local.elements[12] += open*.08; FB.local.elements[13] -= open*.57; }
+      FB.tmp.multiplyMatrices(m,FB.local);
+    }
+    p.im.setMatrixAt(f.idx,FB.tmp);
+  }
   FB.dirty = true;
 }
 const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.Euler(), _fv = new THREE.Vector3(), _fs = new THREE.Vector3(1, 1, 1);
 function placeFoupAt(f, port) {
   f.rot = portRot(port);
-  _fm.compose(_fv.set(port.x, port.top, port.z), _fq.setFromEuler(_fe.set(0, f.rot, 0)), _fs);
+  _fm.compose(_fv.set(port.x + Math.cos(port.rot)*(port.dock || 0)*.25, port.top, port.z - Math.sin(port.rot)*(port.dock || 0)*.25), _fq.setFromEuler(_fe.set(0, f.rot, 0)), _fs);
   setFoupMatrix(f, _fm);
 }
 // 每幀：被吊著的 FOUP 跟著夾爪走；有改動才通知 GPU 更新
@@ -88,6 +105,7 @@ function updateFoupInstances() {
     _fm.multiplyMatrices(v.gripper.matrixWorld, _carryLocal);
     setFoupMatrix(f, _fm);
   }
+  updateDetailedWafers();
   if (FB.dirty) {
     for (const p of FB.parts) { p.im.count = FB.used; p.im.instanceMatrix.needsUpdate = true; }
     if (FB.tag.instanceColor) FB.tag.instanceColor.needsUpdate = true;
@@ -116,3 +134,35 @@ for (let i = initialStbs.length - 1; i > 0; i--) { const j = Math.floor(rndD() *
 initialStbs.slice(0, Math.round(initialStbs.length * STB_INITIAL_FILL / 100)).forEach(p => {
   const f = spawnFoup(p, 'buffered', rndD() < 0.15); f.timer = rndD() * STB_DWELL;
 });
+// 近看才使用獨立晶圓：最多 32 個 FOUP × 25 片，共用一個 InstancedMesh。
+const waferDetail = (() => {
+  const mesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(.235,.235,.003,20),FG.waferMat,32*25);
+  mesh.count=0; mesh.frustumCulled=false; mesh.castShadow=false; scene.add(mesh);
+  return {mesh, selected:[], time:-Infinity, local:new THREE.Matrix4(), world:new THREE.Matrix4(), zero:new THREE.Matrix4().makeScale(0,0,0)};
+})();
+function updateDetailedWafers() {
+  if (BENCH) return;
+  const bank=waferDetail, now=performance.now(), power=GFX.level==='power' || GFX.level==='low';
+  if (now-bank.time > 250) {
+    bank.time=now;
+    const radius = GFX.level==='high' ? 28 : 18;
+    const candidates = power ? [] : [...FB.foups.values()].filter(f=>!f.empty && !['cart','outside'].includes(f.state) && f.worldMatrix && f.worldMatrix.elements[15]!==0)
+      .map(f=>({f,d:Math.hypot(f.worldMatrix.elements[12]-camera.position.x,f.worldMatrix.elements[13]-camera.position.y,f.worldMatrix.elements[14]-camera.position.z)}))
+      .filter(o=>o.d<radius).sort((a,b)=>a.d-b.d).slice(0,32).map(o=>o.f);
+    const next=new Set(candidates), previous=new Set(bank.selected);
+    for (const f of bank.selected) if (!next.has(f)) {f.detailedWafers=false;setFoupMatrix(f,f.worldMatrix);}
+    for (const f of candidates) if (!previous.has(f)) {f.detailedWafers=true;setFoupMatrix(f,f.worldMatrix);}
+    bank.selected=candidates;
+  }
+  let n=0;
+  for (const f of bank.selected) {
+    const count=f.empty?0:(f.waferCount??25), transfer=f.waferTransfer;
+    for(let i=0;i<25;i++) {
+      if (i<count || (transfer && transfer.index===i)) {
+        bank.local.makeTranslation(.02+(transfer && transfer.index===i?transfer.x:0),.145+i*.014,0);
+        bank.world.multiplyMatrices(f.worldMatrix,bank.local); bank.mesh.setMatrixAt(n++,bank.world);
+      }
+    }
+  }
+  bank.mesh.count=n; if(n) bank.mesh.instanceMatrix.needsUpdate=true;
+}

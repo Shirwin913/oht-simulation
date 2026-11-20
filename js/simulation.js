@@ -343,7 +343,7 @@ function stepTransfer(v, dt) {
         port.foup = f; port.reserved = false; f.port = port; f.job = null; v.carry = null; v.claw = 0;
         if (port.owner.type === 'ntb') { f.state = 'ntbOut'; delete f.outputKind; f.storageWaitingSince = null; }
         else if (port.owner.type === 'stb') { f.state = 'buffered'; f.timer = STB_DWELL * (0.3 + rndD() * 0.7); }
-        else { f.state = 'processing'; delete f.outputKind; f.storageWaitingSince = null; f.timer = procTime * (0.7 + rndD() * 0.6); }
+        else machineCycleStart(port, f, procTime * (0.7 + rndD() * 0.6));
         log(`${v.id} 放貨 ${f.id} → ${port.name}`);
         v.state = 'raise';
       }
@@ -416,6 +416,7 @@ function stepPorts(dt) {
   for (const p of ports) {
     const f = p.foup; if (!f) continue;
     if (p.owner.down) continue;                                        // 機台當機：加工暫停
+    if (p.owner.type === 'machine' && ['docking','processing','undocking'].includes(f.state)) { stepMachinePort(p, dt); continue; }
     if (f.state === 'processing' || f.state === 'buffered') { f.timer -= dt; if (f.timer <= 0) { if (f.state === 'processing') { delete f.outputKind; f.storageWaitingSince = null; } f.state = 'ready'; } }
   }
 }
