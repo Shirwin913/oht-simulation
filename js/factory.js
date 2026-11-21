@@ -21,11 +21,12 @@ const pioLeds = makeLedBank(new THREE.BoxGeometry(0.05, 0.012, 0.05));
 const pio3Leds = makeLedBank(new THREE.BoxGeometry(0.026, 0.026, 0.008));   // 機台端 PIO 正面三顆並排指示燈：電源、HO_AVBL、READY
 const G = {
   box: (w, h, d) => new THREE.BoxGeometry(w, h, d),
-  pin: new THREE.CylinderGeometry(0.03, 0.04, 0.05, 8),
-  lcPost: new THREE.BoxGeometry(0.035, 0.8, 0.035), lcCap: new THREE.BoxGeometry(0.05, 0.05, 0.05),   // 光閘（Light Curtain）柱
-  rod: new THREE.CylinderGeometry(0.025, 0.025, 10.5 - STB_TOP, 6),
-  lamp: new THREE.CylinderGeometry(0.14, 0.14, 0.22, 12),
+  pin: new THREE.CylinderGeometry(0.03, 0.04, 0.05, 12),
+  lcPost: new THREE.BoxGeometry(0.035, 0.845, 0.035), lcCap: new THREE.BoxGeometry(0.05, 0.05, 0.05),   // 光閘（Light Curtain）柱
+  rod: new THREE.CylinderGeometry(0.025, 0.025, 10.5 - STB_TOP, 12),
+  lamp: new THREE.CylinderGeometry(0.14, 0.14, 0.22, 24),
 };
+G.towerBase = new THREE.CylinderGeometry(0.1, 0.12, 0.06, 24); G.towerRing = new THREE.CylinderGeometry(0.146, 0.146, 0.012, 24); G.towerCap = new THREE.CylinderGeometry(0.12, 0.14, 0.04, 24);
 G.machine = G.box(4.4, 3.0, 2.6); G.front = G.box(3.6, 1.6, 0.05); G.screen = G.box(0.9, 0.55, 0.06);
 G.portBase = G.box(0.95, 1.0, 0.95); G.portPlate = G.box(0.82, 0.04, 0.82);
 G.pioBox = G.box(0.16, 0.12, 0.14);
@@ -61,7 +62,7 @@ function portMesh(g, lx, ledSide, pio, moving = false) {
   }
   // 光閘：Load Port 靠走道那一側的兩根柱子（發射器／接收器），中間有看不見的光束；有東西擋到就會讓 E84 的 HO_AVBL 掉下來
   pendingLc = [-1, 1].map(k => {
-    staticBatch.add(G.lcPost, 0x2b3036, g, lx + k * 0.42, 1.45, LC_Z); staticBatch.add(G.lcCap, 0xf59e0b, g, lx + k * 0.42, 1.87, LC_Z);
+    staticBatch.add(G.lcPost, 0x2b3036, g, lx + k * 0.42, 1.4225, LC_Z);   // 柱子從 Load Port 台面（1.0 m）一路到頂蓋，不能浮在空中 staticBatch.add(G.lcCap, 0xf59e0b, g, lx + k * 0.42, 1.87, LC_Z);
     return lcLeds.add(g, lx + k * 0.42, 1.45, LC_Z + 0.022);                  // 燈條貼在柱子朝走道那一面
   });
   // E84 PIO（機台端）：通訊器盒放在機台頂部／NTB 頂框上，頂面是收發窗（燈：綠＝HO_AVBL ON 待命、紅＝OFF、青色閃＝交握中）
@@ -90,8 +91,13 @@ function makeMachine(seg, dc, name) {
   staticBatch.add(G.machine, 0xd3d9df, g, 0, 1.5, zc);
   staticBatch.add(G.front, 0x23303c, g, 0, 1.9, side * 0.63);
   screenBatch.add(G.screen, 0x1d6fa5, g, 1.6, 2.4, side * 0.6);
+  // 三色燈塔：機台頂上一個深色底座，三顆燈直接疊在上面，燈與燈之間是細細的深色分隔環，最上面一個頂蓋
+  { const tx = -1.8, tz = zc + side * 0.9;
+    staticBatch.add(G.towerBase, 0x2b3036, g, tx, 3.03, tz);
+    [3.06, 3.28, 3.50, 3.72].forEach(y => staticBatch.add(G.towerRing, 0x3a4047, g, tx, y, tz));
+    staticBatch.add(G.towerCap, 0x2b3036, g, tx, 3.745, tz); }
   ['#ef4444', '#f59e0b', '#22c55e'].forEach((c, i) => {                 // 三色燈：紅、黃、綠
-    const led = lampBank.add(g, -1.8, 3.15 + (2 - i) * 0.23, zc + side * 0.9);
+    const led = lampBank.add(g, -1.8, 3.06 + 0.11 + (2 - i) * 0.22, zc + side * 0.9);   // 三顆燈一顆疊一顆貼在一起，最下面坐在底座上
     led.emissive.set(c); led.emissiveIntensity = 0.05; m.lights.push(led);
   });
   const lb = makeLabel(name, { scale: 0.8 }); lb.position.set(0, 3.9, zc); g.add(lb); labels.push(lb);
@@ -108,7 +114,7 @@ function makeNtb(seg, dc, zone) {
   // NTB 直接安裝於原地板；無獨立操作台、無黃色地板或大型背板。
   [-.95,.95].forEach((lx,i) => {
     const moduleId = `M${String((stationNo-1)*2+i+1).padStart(2,'0')}`;
-    const p = addPort(seg, dc+lx, 0, PORT_TOP, owner, `${name}-${moduleId}`, -1, portMesh(g,lx,1,{y:1.887,z:-LC_Z}));
+    const p = addPort(seg, dc+lx, 0, PORT_TOP, owner, `${name}-${moduleId}`, -1, portMesh(g,lx,1));   // NTB 不裝 E84 光通訊器（PIO）外觀
     p.moduleId = moduleId; p.ntbDirection = i === 0 ? 'in' : 'out';
     const tag = makeLabel(`${moduleId} ${i === 0 ? '投貨' : '取貨'}`, {scale:.55}); tag.position.set(lx,2.05,.5); g.add(tag); labels.push(tag);
   });
@@ -119,23 +125,23 @@ function makeNtb(seg, dc, zone) {
   const piece = (w,h,d,x,y,z,material=metal,parent=g) => { const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material); mesh.position.set(x,y,z); parent.add(mesh); return mesh; };
   owner.ports.forEach((p,i) => {
     const lx = i ? .95 : -.95;
-    [-.42,.42].forEach(x => { piece(.025,.8,.92,lx+x,1.45,0,acrylic); piece(.035,.82,.035,lx+x,1.45,-LC_Z); piece(.035,.035,.94,lx+x,1.87,0); });
-    piece(.84,.8,.025,lx,1.45,-LC_Z,acrylic);
+    [-.42,.42].forEach(x => { piece(.025,.845,.92,lx+x,1.4225,0,acrylic); piece(.035,.87,.035,lx+x,1.435,-LC_Z); piece(.035,.035,.94,lx+x,1.87,0); });   // 壓克力罩、立柱都從台面（1.0 m）起
+    piece(.84,.845,.025,lx,1.4225,-LC_Z,acrylic);
     piece(.86,.035,.035,lx,1.87,-LC_Z);
     // 氣缸在台體內，窗片向下收入 NTB，並由台體前板遮住。
     piece(.91,.98,.055,lx,.51,LC_Z+.06,mat(0x8996a3));
     piece(.06,.65,.06,lx+.37,.52,LC_Z-.05);
     const door = new THREE.Group(); door.position.set(lx,0,LC_Z); g.add(door);
-    piece(.79,.78,.025,0,1.45,0,acrylic,door);
+    piece(.79,.82,.025,0,1.425,0,acrylic,door);
     piece(.81,.035,.04,0,1.84,0,metal,door);
     p.gate = 0; p.gateAccess = false; p.gateMesh = door;
   });
-  // 鐵架：兩層、每層兩格，放在投取貨站外側的人員區。
+  // 鐵架：兩層、每層三格，放在投取貨站外側的人員區。
   owner.rack = [];
   [-1.45,1.45].forEach(x => [-3.85,-2.95].forEach(z => piece(.06,2.55,.06,x,1.275,z)));
   [.65,1.65,2.55].forEach(y => piece(3,.06,1.0,0,y,-3.4));
   const frame = frameAt(seg,dc);
-  [.68,1.68].forEach(top => [-.76,.76].forEach(x => {
+  [.68,1.68].forEach(top => [-1.0,0,1.0].forEach(x => {   // 每層三格（FOUP 約 0.65 m 寬，間距 1 m）
     owner.rack.push({name:`${name}-R${owner.rack.length+1}`, top, x:frame.x+x*frame.tx-3.4*frame.nx, z:frame.z+x*frame.tz-3.4*frame.nz, rot:owner.ports[0].rot, foup:null});
   }));
   const rackLabel = makeLabel(name + ' FOUP 鐵架', {scale:.8}); rackLabel.position.set(0,2.95,-3.4);g.add(rackLabel);labels.push(rackLabel);

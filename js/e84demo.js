@@ -235,7 +235,7 @@ function e84DemoWave(cv) {
 const pioBeams = [], _pioA = new THREE.Vector3();
 function pioBeam(i) {
   if (!pioBeams[i]) {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1, 8, 1, true),
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1, 12, 1, true),
       new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
     m.frustumCulled = false; scene.add(m); pioBeams[i] = m;
   }

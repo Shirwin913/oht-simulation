@@ -21,7 +21,7 @@ function buildLifter(LI) {
   // 頂上：馬達＋減速機，兩根捲筒軸（鏈條從捲筒放下來）
   b.add(new THREE.BoxGeometry(0.6, 0.42, 0.5), 0x3a4652, g, 0, TOP + 0.3, 0);
   b.add(new THREE.BoxGeometry(0.34, 0.3, 0.34), 0x1f2937, g, 0.45, TOP + 0.25, 0);
-  const shaft = new THREE.CylinderGeometry(0.11, 0.11, 2.0, 14).rotateZ(Math.PI / 2);
+  const shaft = new THREE.CylinderGeometry(0.11, 0.11, 2.0, 24).rotateZ(Math.PI / 2);
   [0.62, -0.62].forEach(z => b.add(shaft, 0x6b7280, g, 0, TOP + 0.2, z));
   // 地面：只有黃黑斑馬紋警示區（現場沒有圍籬、工作桌、地面平台）
   const FX = 2.3, FZ = 1.55;
@@ -52,13 +52,13 @@ function buildLifter(LI) {
   const lon = box(L, 0.1, 0.1, frameMat); lon.position.set(0, 0.25, 0); carrier.add(lon);
   [LIFT_HALF, -LIFT_HALF].forEach(x => { const m = box(0.05, 0.36, 0.7, mat(0x111827)); m.position.set(x, 0, 0); carrier.add(m); });   // 兩端的擋車板
   const chainMat = mat(0x4b5563, { metalness: 0.8, roughness: 0.35 });
-  const chainGeo = new THREE.CylinderGeometry(0.025, 0.025, 1, 6);
+  const chainGeo = new THREE.CylinderGeometry(0.025, 0.025, 1, 10);
   const chains = [[0.9, 0.62], [0.9, -0.62], [-0.9, 0.62], [-0.9, -0.62]].map(([x, z]) => {
     const m = new THREE.Mesh(chainGeo, chainMat); m.userData.x = x; m.userData.z = z; g.add(m); return m;
   });
   // 頂上的旋轉警示燈：升降時閃
   const beaconMat = mat(0xf59e0b, { emissive: 0xf59e0b, emissiveIntensity: 0 });
-  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.22, 12), beaconMat); beacon.position.set(-0.45, TOP + 0.62, 0); g.add(beacon);
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.22, 24), beaconMat); beacon.position.set(-0.45, TOP + 0.62, 0); g.add(beacon);
 
   const label = makeLabel(`🔧 ${LI.name}・捲揚機`, { scale: 1.5, w: 400, bg: 'rgba(180,83,9,.92)' });
   label.position.set(f.x, TOP + 1.4, f.z); scene.add(label); labels.push(label);

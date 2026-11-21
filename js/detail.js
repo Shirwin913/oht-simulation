@@ -30,10 +30,10 @@ const detailBatch = makeBatch();
     plinth: B(4.5, 0.12, 2.7), frameH: B(3.7, 0.05, 0.035), frameV: B(0.05, 1.7, 0.035),
     lowerPanel: B(4.4, 0.95, 0.02), seamV: B(0.012, 2.75, 0.02), seamH: B(4.42, 0.012, 0.02),
     handle: B(0.03, 0.26, 0.04), sideSeam: B(0.02, 2.75, 0.012),
-    topBox: B(1.6, 0.26, 1.2), grille: B(1.4, 0.012, 1.0), duct: new THREE.CylinderGeometry(0.17, 0.17, 0.55, 14), ductCap: new THREE.CylinderGeometry(0.2, 0.2, 0.05, 14),
-    tray: B(4.0, 0.06, 0.3), emoPlate: B(0.17, 0.17, 0.02), emo: new THREE.CylinderGeometry(0.05, 0.055, 0.05, 14),
-    lpPlate: B(0.95, 1.56, 0.08), lpDoor: B(0.66, 0.5, 0.02), lpDoorFrame: B(0.72, 0.56, 0.012),
-    lpPanel: B(0.4, 0.17, 0.02), lpBtn: new THREE.CylinderGeometry(0.026, 0.026, 0.02, 10), lpFoot: B(1.0, 0.06, 1.0),
+    topBox: B(1.6, 0.26, 1.2), grille: B(1.4, 0.012, 1.0), duct: new THREE.CylinderGeometry(0.17, 0.17, 0.55, 28), ductCap: new THREE.CylinderGeometry(0.2, 0.2, 0.05, 28),
+    tray: B(4.0, 0.06, 0.3), emoPlate: B(0.17, 0.17, 0.02), emo: new THREE.CylinderGeometry(0.05, 0.055, 0.05, 24),
+    lpLow: B(0.95, 1.09, 0.075), lpTop: B(0.95, 0.13, 0.075), lpSide: B(0.145, 0.53, 0.075),
+    lpPanel: B(0.4, 0.17, 0.02), lpBtn: new THREE.CylinderGeometry(0.026, 0.026, 0.02, 16), lpFoot: B(1.0, 0.06, 1.0),
   };
   const emoRot = new THREE.Matrix4().makeRotationX(Math.PI / 2);
   D.emo.applyMatrix4(emoRot); D.lpBtn.applyMatrix4(emoRot);
@@ -58,8 +58,12 @@ const detailBatch = makeBatch();
     add(D.emoPlate, 0xf2c200, 2.02, 1.45, zf + 0.012); add(D.emo, 0xd62828, 2.02, 1.45, zf + 0.045);   // 緊急停止按鈕
     m.ports.forEach(p => {                                                  // Load Port：靠機台的直立面板（FIMS 開門口）、底座操作面板
       const lx = p.d - dc;
-      add(D.lpPlate, 0xb6bfc7, lx, 0.78, -0.56);
-      add(D.lpDoorFrame, 0x8a949e, lx, 1.3, -0.513); add(D.lpDoor, 0x353d46, lx, 1.3, -0.507);
+      // FIMS 對接面：中間是開門口（FOUP 門 0.6×0.5 m 剛好塞得進去），FOUP 前移 250 mm 後外殼正面貼平這片面板
+      //   外殼前緣對接後在 z = -0.575（＝ -(0.25 + 0.325)）；開門口後面就是機台的黑色觀察窗，看起來是一個深色的洞
+      const PZ = -0.6145;                                                     // 面板 z：-0.652 ～ -0.577，跟對接後的外殼留 2 mm，兩個面才不會疊在一起閃
+      add(D.lpLow, 0xb6bfc7, lx, 0.545, PZ);                                 // 開門口下方
+      add(D.lpTop, 0xb6bfc7, lx, 1.685, PZ);                                // 開門口上方
+      add(D.lpSide, 0xb6bfc7, lx - 0.4025, 1.355, PZ); add(D.lpSide, 0xb6bfc7, lx + 0.4025, 1.355, PZ);   // 開門口兩側
       add(D.lpFoot, 0x2f363d, lx, 0.03, 0);
       add(D.lpPanel, 0x1f252b, lx, 0.5, 0.486);
       add(D.lpBtn, 0x22c55e, lx - 0.09, 0.5, 0.5); add(D.lpBtn, 0xfacc15, lx, 0.5, 0.5); add(D.lpBtn, 0x60a5fa, lx + 0.09, 0.5, 0.5);

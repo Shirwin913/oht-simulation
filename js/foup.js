@@ -12,13 +12,13 @@ function foupShape(w, d, rf, rb) {
 }
 const FG = (() => {
   const shell = new THREE.ExtrudeGeometry(foupShape(0.58, 0.58, 0.05, 0.2),
-    { depth: 0.46, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.035, bevelSegments: 3, curveSegments: 10 });
+    { depth: 0.46, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.035, bevelSegments: 3, curveSegments: 12 });
   shell.rotateX(-Math.PI / 2); shell.translate(0, 0.104, 0);   // 外殼底面比底板頂面高 4 mm：兩個面重疊會閃（Z-fighting）
   // 晶圓堆疊紋理
   const c = document.createElement('canvas'); c.width = 16; c.height = 256;
   const x = c.getContext('2d'); x.fillStyle = '#5b636c'; x.fillRect(0, 0, 16, 256);
   for (let i = 0; i < 25; i++) { x.fillStyle = '#d7dde3'; x.fillRect(0, 4 + i * 10, 16, 4); }
-  const waferTex = new THREE.CanvasTexture(c);
+  const waferTex = new THREE.CanvasTexture(c); waferTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());   // 斜看晶圓堆疊時條紋比較不會糊、不會出現斜紋
   // 條碼紋理
   const b = document.createElement('canvas'); b.width = 128; b.height = 72;
   const y = b.getContext('2d'); y.fillStyle = '#f7f7f5'; y.fillRect(0, 0, 128, 72); y.fillStyle = '#111';
@@ -26,10 +26,12 @@ const FG = (() => {
   y.font = '12px monospace'; y.fillText('F0UP-300', 34, 64);
   // 效能：外殼＋門合併成一個半透明網格；底板、握把、flange 合併成一個不透明網格（顏色存在頂點上）
   const shellB = makeBatch();
-  shellB.add(shell, 0xff7a18, null, 0, 0, 0);
+  shellB.add(smoothNormals(shell, 50), 0xff7a18, null, 0, 0, 0);   // 圓角、倒角用平滑法線，看起來光滑
   // FOUP 門獨立繪製，讓 FIMS 對接時能下降開門。
   const solidB = makeBatch();
-  solidB.add(new THREE.BoxGeometry(0.64, 0.05, 0.62), 0x8d939a, null, 0, 0.035, 0);       // 底板
+  const base = new THREE.ExtrudeGeometry(foupShape(0.62, 0.6, 0.06, 0.18), { depth: 0.044, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.008, bevelSegments: 2, curveSegments: 12 });
+  base.rotateX(-Math.PI / 2); base.translate(0, 0.012, 0);
+  solidB.add(smoothNormals(base, 50), 0x8d939a, null, 0, 0, 0);          // 底板：跟外殼一樣的圓角（後側大圓角），邊緣倒角
   [-1, 1].forEach(k => solidB.add(new THREE.BoxGeometry(0.3, 0.3, 0.03), 0x6f757c, null, -0.05, 0.33, k * 0.355)); // 兩側握把
   solidB.add(new THREE.BoxGeometry(0.2, 0.05, 0.2), 0x3a4047, null, 0, 0.625, 0);         // 頂部 OHT flange
   solidB.add(new THREE.BoxGeometry(0.38, 0.03, 0.32), 0x3a4047, null, 0, 0.665, 0);
@@ -38,7 +40,7 @@ const FG = (() => {
     shellMat: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, emissive: 0x6a2400, emissiveIntensity: 0.45, roughness: 0.12,
       metalness: 0, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }),
     solidMat: vcMat({ metalness: 0.35 }), tagGeo: new THREE.BoxGeometry(0.1, 0.012, 0.1),
-    wafer: new THREE.CylinderGeometry(0.235, 0.235, 0.36, 28),
+    wafer: new THREE.CylinderGeometry(0.235, 0.235, 0.36, 40),
     waferMat: new THREE.MeshStandardMaterial({ map: waferTex, metalness: 0.55, roughness: 0.35 }),
     gray: mat(0x6f757c, { metalness: 0.3 }), darkGray: mat(0x3a4047, { metalness: 0.4 }), baseMat: mat(0x8d939a, { metalness: 0.35 }),
     label: new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(b) }),
@@ -134,7 +136,7 @@ initialStbs.slice(0, Math.round(initialStbs.length * STB_INITIAL_FILL / 100)).fo
 });
 // 近看才使用獨立晶圓：最多 32 個 FOUP × 25 片，共用一個 InstancedMesh。
 const waferDetail = (() => {
-  const mesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(.235,.235,.003,20),FG.waferMat,32*25);
+  const mesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(.235,.235,.003,36),FG.waferMat,32*25);
   mesh.count=0; mesh.frustumCulled=false; mesh.castShadow=false; scene.add(mesh);
   return {mesh, selected:[], time:-Infinity, local:new THREE.Matrix4(), world:new THREE.Matrix4(), zero:new THREE.Matrix4().makeScale(0,0,0)};
 })();

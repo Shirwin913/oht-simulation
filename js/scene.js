@@ -123,6 +123,25 @@ function setXrayMat(m, on) {
 // ================== 合併靜態物件（場景大時減少繪圖次數，才不會卡）==================
 // 把很多小幾何（各自有位置、顏色）合併成一個幾何，顏色存在頂點上
 const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _v3 = new THREE.Vector3(), _s3 = new THREE.Vector3();
+// 平滑法線：把相鄰、夾角小於 deg 度的面法線平均起來，圓角、弧面看起來就是光滑的，不會一格一格（不增加面數）
+function smoothNormals(geo, deg = 45) {
+  const g = geo.index ? geo.toNonIndexed() : geo, pos = g.attributes.position, n = pos.count, cos = Math.cos(deg * Math.PI / 180);
+  const fn = new Float32Array(n * 3), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let i = 0; i < n; i += 3) {
+    a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i + 1); c.fromBufferAttribute(pos, i + 2);
+    b.sub(a); c.sub(a); b.cross(c).normalize();
+    for (let k = 0; k < 3; k++) { fn[(i + k) * 3] = b.x; fn[(i + k) * 3 + 1] = b.y; fn[(i + k) * 3 + 2] = b.z; }
+  }
+  const groups = new Map();
+  for (let i = 0; i < n; i++) { const k = `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(i); }
+  const out = new Float32Array(n * 3);
+  for (const list of groups.values()) for (const i of list) {
+    let x = 0, y = 0, z = 0;
+    for (const j of list) if (fn[i * 3] * fn[j * 3] + fn[i * 3 + 1] * fn[j * 3 + 1] + fn[i * 3 + 2] * fn[j * 3 + 2] >= cos) { x += fn[j * 3]; y += fn[j * 3 + 1]; z += fn[j * 3 + 2]; }
+    const l = Math.hypot(x, y, z) || 1; out[i * 3] = x / l; out[i * 3 + 1] = y / l; out[i * 3 + 2] = z / l;
+  }
+  g.setAttribute('normal', new THREE.BufferAttribute(out, 3)); return g;
+}
 function makeBatch() {
   const items = [];
   const api = {

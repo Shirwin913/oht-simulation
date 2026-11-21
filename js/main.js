@@ -111,11 +111,14 @@ function loop(now) {
   updateVisuals(clock.elapsedTime);
   alarmTick(paused ? 0 : dt * speed);
   updateLabelLod(dt);
-  if (followed) {
-    followed.group.getWorldPosition(tmp); tmp.y -= 1.5;
-    tmp.sub(controls.target); controls.target.add(tmp); camera.position.add(tmp);
+  if (walkOn) walkTick(dt);                                             // 人員視角：自己控制鏡頭
+  else {
+    if (followed) {
+      followed.group.getWorldPosition(tmp); tmp.y -= 1.5;
+      tmp.sub(controls.target); controls.target.add(tmp); camera.position.add(tmp);
+    }
+    controls.update();
   }
-  controls.update();
   renderer.render(scene, camera);
   uiT += dt; if (uiT > 0.25) { uiT = 0; updateUI(); }
 }

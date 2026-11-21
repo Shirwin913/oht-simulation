@@ -29,7 +29,7 @@ aps.forEach((a, i) => { a.idx = i; a.color = new THREE.Color().setHSL((i * 0.618
     b.add(new THREE.BoxGeometry(0.4, 0.06, 0.4), 0x2f3740, null, a.x, 10.47, a.z);       // 天花板固定座
     b.add(new THREE.BoxGeometry(0.36, 0.1, 0.36), 0xeef0f1, null, a.x, Y + 0.12, a.z);   // AP 本體
     [[0.13, 0.13], [-0.13, 0.13], [0.13, -0.13], [-0.13, -0.13]].forEach(([ox, oz]) =>  // 四支天線（朝下）
-      b.add(new THREE.CylinderGeometry(0.012, 0.012, 0.26, 6), 0x1f2937, null, a.x + ox, Y - 0.06, a.z + oz));
+      b.add(new THREE.CylinderGeometry(0.012, 0.012, 0.26, 10), 0x1f2937, null, a.x + ox, Y - 0.06, a.z + oz));
   }
   apMeshes = [b.build(vcMat({ roughness: 0.5 }))];
   const ledGeo = new THREE.BoxGeometry(0.12, 0.02, 0.04);
@@ -143,7 +143,7 @@ gws.forEach((g, i) => { g.idx = i; g.color = new THREE.Color(0xf59e0b); });
     b.add(new THREE.BoxGeometry(0.5, 0.06, 0.5), 0x2f3740, null, g.x, 10.47, g.z);
     b.add(new THREE.BoxGeometry(0.46, 0.16, 0.46), 0xfbbf24, null, g.x, 10.33, g.z);                 // 閘道器本體（黃色）
     [[0.17, 0.17], [-0.17, 0.17], [0.17, -0.17], [-0.17, -0.17], [0, 0]].forEach(([ox, oz]) =>
-      b.add(new THREE.CylinderGeometry(0.014, 0.014, 0.34, 6), 0x1f2937, null, g.x + ox, 10.08, g.z + oz));
+      b.add(new THREE.CylinderGeometry(0.014, 0.014, 0.34, 10), 0x1f2937, null, g.x + ox, 10.08, g.z + oz));
   }
   const gm = b.build(vcMat({ roughness: 0.5 })); gm.visible = false; window.gwMesh = gm;
   for (const g of gws) {

@@ -136,17 +136,17 @@ function createVehicle(seg, d) {
     const b = new THREE.Group(); b.userData.ox = ox; g.add(b);
     const bAdd = (m, x, y, z) => { m.position.set(x, y, z); b.add(m); return m; };
     bAdd(box(0.34, 0.04, 0.3, VG.gray), 0, -0.02, 0);                       // 台車框架
-    const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.18, 16), VG.motor);
+    const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.18, 24), VG.motor);
     motor.rotation.z = Math.PI / 2; bAdd(motor, 0.02, 0.05, 0.07);          // 走行馬達
     bAdd(box(0.12, 0.12, 0.1, VG.motor), -0.1, 0.04, -0.05);               // 減速機
     bAdd(box(0.05, 0.03, 0.05, VG.black), 0.13, 0.05, 0.07);               // 編碼器
     [-0.05, 0.05].forEach(z => {                                            // 頂部導引輪（分岔用）
-      const gr = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.03, 12), VG.black); bAdd(gr, 0.1, 0.105, z);
+      const gr = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.03, 18), VG.black); bAdd(gr, 0.1, 0.105, z);
     });
     bAdd(box(0.08, 0.13, 0.06, VG.gray), 0, -0.11, 0);                     // 穿過軌道開槽的連桿
     b.userData.wheels = [-0.195, 0.195].map(z => {                         // 走行輪（壓在軌道內翻邊上）
       const w = new THREE.Group(); bAdd(w, 0, -0.12 + WHEEL_R, z);
-      const tire = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.05, 20), VG.tire); tire.rotation.x = Math.PI / 2; w.add(tire);
+      const tire = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.05, 32), VG.tire); tire.rotation.x = Math.PI / 2; w.add(tire);
       const hub = box(0.07, 0.07, 0.055, VG.hub); w.add(hub);               // 方形輪轂：看得出輪子在轉
       return w;
     });
@@ -198,7 +198,7 @@ function createVehicle(seg, d) {
   const housing = sAdd(new THREE.Mesh(MODEL.near.shift, MODEL.mat), 0, UNIT_DY, 0); housing.castShadow = true;
   // 捲揚鼓：在捲揚盒裡（勾「透視」才看得到）
   const drum = new THREE.Group(); sAdd(drum, 0, M.hoistBoxY + UNIT_DY, 0);
-  const drumCyl = new THREE.Mesh(new THREE.CylinderGeometry(DRUM_R, DRUM_R, 0.8, 20), mat(0x9aa3ab, { metalness: 0.7, roughness: 0.3 }));
+  const drumCyl = new THREE.Mesh(new THREE.CylinderGeometry(DRUM_R, DRUM_R, 0.8, 32), mat(0x9aa3ab, { metalness: 0.7, roughness: 0.3 }));
   drumCyl.rotation.z = Math.PI / 2; drum.add(drumCyl);
   const mark = box(0.75, 0.025, 0.03, mat(0xf2c94c)); mark.position.y = DRUM_R + 0.005; drum.add(mark);
   // 夾爪（模型）：跟著捲揚上下
@@ -216,7 +216,7 @@ function createVehicle(seg, d) {
   [-1, 1].forEach(k => {                                                  // k=+1 車頭端，k=-1 車尾端
     [-1, 1].forEach((sz, i) => {                                          // sz：左右兩片
       const pv = new THREE.Group(); pv.position.set(k * (END_X - END_T / 2), BODY_BOT + 0.04 - i * 0.012, sz * GUARD_Z); g.add(pv);   // 外殼底部（FOUP 底面再下面一點），揮出時托住 FOUP
-      const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.06, 10), VG.gray); pv.add(pin);  // 直立轉軸
+      const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.06, 14), VG.gray); pv.add(pin);  // 直立轉軸
       const plate = new THREE.Mesh(VG.guardGeo, VG.guardMat); plate.castShadow = true;
       plate.position.set(-k * GUARD_L / 2, 0, -sz * GUARD_W / 2); pv.add(plate);
       pv.userData.open = -sz * k * Math.PI / 2;                           // 收起時的轉角（轉進外殼底下）

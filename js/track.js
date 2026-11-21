@@ -11,9 +11,65 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
     for (let i = 0; i < n; i++) {
       const d0 = sg.len * i / n, d1 = sg.len * (i + 1) / n;
       if (onLifter(sg, (d0 + d1) / 2, LIFT_HALF)) continue;   // 捲揚機那段軌道是活動的（maintenance.js）
-      samples.push([...sg.at(d0), ...sg.at(d1), sg.curveAt((d0 + d1) / 2)]);
+      samples.push([...sg.at(d0), ...sg.at(d1), sg.curveAt((d0 + d1) / 2)]);   // 彎道另外用連續曲面做（下面），這裡的彎道片段會隱藏
     }
   });
+  // ---------- 彎道：把軌道斷面（倒 U 型＋底部內翻邊）沿著彎道連續掃出來，表面是光滑曲面，沒有鋸齒和接縫 ----------
+  {
+    // 斷面（側向, 高度），順時針；彎道比直軌抬高 3 mm、側面內縮 4 mm，跟直軌重疊的地方才不會閃
+    const PROF = [[-0.31, 0.15], [0.31, 0.15], [0.31, -0.15], [0.11, -0.15], [0.11, -0.12], [0.28, -0.12], [0.28, 0.12],
+      [-0.28, 0.12], [-0.28, -0.12], [-0.11, -0.12], [-0.11, -0.15], [-0.31, -0.15]].map(([x, y]) => [x - Math.sign(x) * 0.004, y + 0.003]);
+    // 先找出所有彎道區段（每段前後多延伸 15 cm 跟直軌重疊），再把每種斷面沿著這些區段掃出來
+    const runs = [];
+    segs.forEach(sg => {
+      let a = null;
+      const flush = d => { if (a !== null) runs.push([sg, Math.max(0, a - 0.15), Math.min(sg.len, d + 0.15)]); a = null; };
+      for (let d = 0; d <= sg.len; d += 0.02) {
+        const c = sg.curveAt(d) && !onLifter(sg, d, LIFT_HALF);
+        if (c && a === null) a = d; else if (!c && a !== null) flush(d - 0.02);
+      }
+      flush(sg.len);
+    });
+    const runFrames = runs.map(([sg, a, b]) => {                          // 彎越急切越細：約每轉 3 度一段
+      const frames = []; let last = null;
+      for (let d = a; d <= b + 1e-6; d += 0.02) {
+        const f = frameAt(sg, Math.min(d, b));
+        if (!last) { frames.push(f); last = f; continue; }
+        let dth = Math.abs(f.th - last.th); if (dth > Math.PI) dth = 2 * Math.PI - dth;
+        if (dth > 0.05 || Math.hypot(f.x - last.x, f.z - last.z) > 0.8 || d + 0.02 > b) { frames.push(f); last = f; }
+      }
+      return frames;
+    });
+    // 把一個封閉斷面（順時針的 [側向, 高度] 點）沿所有彎道掃成一個網格
+    const sweepMesh = (prof, material, cast) => {
+      const pos = [], nor = [];
+      const edgeN = prof.map((p, k) => { const q = prof[(k + 1) % prof.length], dx = q[0] - p[0], dy = q[1] - p[1], l = Math.hypot(dx, dy); return [-dy / l, dx / l]; });
+      const ring = f => prof.map(([x, y]) => [f.x + x * f.nx, H + y, f.z + x * f.nz]);
+      const tri = (a, b, c, na, nb, nc) => { pos.push(...a, ...b, ...c); nor.push(...na, ...nb, ...nc); };
+      runFrames.forEach(frames => {
+        for (let i = 0; i + 1 < frames.length; i++) {
+          const f0 = frames[i], f1 = frames[i + 1], r0 = ring(f0), r1 = ring(f1);
+          for (let k = 0; k < prof.length; k++) {
+            const k2 = (k + 1) % prof.length, [ex, ey] = edgeN[k];
+            const n0 = [ex * f0.nx, ey, ex * f0.nz], n1 = [ex * f1.nx, ey, ex * f1.nz];
+            const A = r0[k], B = r0[k2], C = r1[k2], D = r1[k];
+            const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2], vx = D[0] - A[0], vy = D[1] - A[1], vz = D[2] - A[2];
+            const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;   // 三角形繞向要跟法線同一邊（外面看得到）
+            if (cx * n0[0] + cy * n0[1] + cz * n0[2] >= 0) { tri(A, B, C, n0, n0, n1); tri(A, C, D, n0, n1, n1); }
+            else { tri(A, C, B, n0, n1, n0); tri(A, D, C, n0, n1, n1); }
+          }
+        }
+      });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      const m = new THREE.Mesh(g, material); m.castShadow = cast; m.frustumCulled = false; scene.add(m);
+    };
+    const rect = (cx, cy, hx, hy) => [[cx - hx, cy + hy], [cx + hx, cy + hy], [cx + hx, cy - hy], [cx - hx, cy - hy]];
+    sweepMesh(PROF, mat(0xa6dcc6, { metalness: 0.45, roughness: 0.4 }), true);                                       // 軌道本體
+    [0.095, 0.035, -0.025, -0.085].forEach(y => [-1, 1].forEach(k =>                                                   // 側面溝槽：每邊四條
+      sweepMesh(rect(k * 0.308, y + 0.003, 0.006, 0.008), mat(0x8a939b, { metalness: 0.5 }), false)));
+    sweepMesh(rect(0, 0.113, 0.025, 0.01), mat(0x1b1f24, { roughness: 0.8 }), false);                                    // 供電線
+  }
   const N = samples.length;
   const grooveMat = mat(0x8a939b, { metalness: 0.5 });
   const parts = [ // [幾何, y 偏移, 側向偏移, 是否套用軌道顏色, 材質]
@@ -31,7 +87,7 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
     const im = new THREE.InstancedMesh(geo, m || railMat, N); im.castShadow = colored; im.frustumCulled = false; scene.add(im);
     return { im, oy, oz, colored };
   });
-  const ALU = new THREE.Color(0xd3d9de), MINT = new THREE.Color(0xa6dcc6);
+  const ALU = new THREE.Color(0xd3d9de), MINT = new THREE.Color(0xa6dcc6), ZERO_M = new THREE.Matrix4().makeScale(0, 0, 0);
   const d = new THREE.Object3D();
   samples.forEach(([x0, z0, x1, z1, curve], i) => {
     const ang = Math.atan2(-(z1 - z0), x1 - x0), len = Math.hypot(x1 - x0, z1 - z0) * (curve ? 1.2 : 1.06);   // 彎道外緣比中心線長，片段要拉長一點才不會在外緣留下鋸齒缺口
@@ -40,6 +96,7 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
     // 彎道段（淺綠）稍微抬高 3 mm、側壁往內縮 4 mm：分岔／合流處直軌和彎軌重疊時，兩片才不會在同一個平面上互相閃爍（Z-fighting）
     const lift = curve ? 0.003 : 0, inset = curve ? 0.004 : 0;
     for (const p of parts) {
+      if (curve) { p.im.setMatrixAt(i, ZERO_M); if (p.colored) p.im.setColorAt(i, MINT); continue; }   // 彎道整個由連續曲面負責（本體、溝槽、供電線）
       const oz = p.oz ? p.oz - Math.sign(p.oz) * inset : 0;
       d.position.set(mx + oz * Math.sin(ang), H + p.oy + lift, mz + oz * Math.cos(ang));
       d.updateMatrix(); p.im.setMatrixAt(i, d.matrix);
@@ -71,7 +128,7 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
   const hangers = [], brackets = [];
   const hangOk = spaced(1.6);
   along(4, 0.5, f => { if (!hangOk(f.x, f.z)) return; hangers.push([f.x, H + (10.5 - H) / 2, f.z, 0, 10.5 - H]); brackets.push([f.x, H + 0.2, f.z, f.th]); });
-  placeInst(new THREE.CylinderGeometry(0.05, 0.05, 1, 6), mat(0x8a949d, { metalness: 0.5 }), hangers);
+  placeInst(new THREE.CylinderGeometry(0.05, 0.05, 1, 14), mat(0x8a949d, { metalness: 0.5 }), hangers);
   placeInst(new THREE.BoxGeometry(0.28, 0.1, 0.72), mat(0xc7cdd3, { metalness: 0.6 }), brackets);
 
   // 地面方向箭頭（每 6 公尺，畫在軌道正下方）
