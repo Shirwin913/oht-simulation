@@ -24,6 +24,7 @@
 
 // ---------- 機台與 Load Port 細節 ----------
 const detailBatch = makeBatch();
+const LPD = { mesh: null, tmp: new THREE.Matrix4(), m: new THREE.Matrix4() };
 {
   const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
   const D = {
@@ -37,6 +38,7 @@ const detailBatch = makeBatch();
   };
   const emoRot = new THREE.Matrix4().makeRotationX(Math.PI / 2);
   D.emo.applyMatrix4(emoRot); D.lpBtn.applyMatrix4(emoRot);
+  const lpDoors = [];
   machines.forEach(m => {
     const dc = m.ports.reduce((a, p) => a + p.d, 0) / m.ports.length;
     const g = groupAt(m.seg, dc), zc = -1.95, zf = -0.65;                  // 機台中心 z、正面（朝軌道、Load Port 那一面）
@@ -64,12 +66,28 @@ const detailBatch = makeBatch();
       add(D.lpLow, 0xb6bfc7, lx, 0.545, PZ);                                 // 開門口下方
       add(D.lpTop, 0xb6bfc7, lx, 1.685, PZ);                                // 開門口上方
       add(D.lpSide, 0xb6bfc7, lx - 0.4025, 1.355, PZ); add(D.lpSide, 0xb6bfc7, lx + 0.4025, 1.355, PZ);   // 開門口兩側
+      // Load Port 自己的門（關著時擋住開門口；FOUP 對接後跟 FOUP 門扣在一起，一起退後、下降）
+      g.updateMatrixWorld(true);
+      p.lpDoor = { idx: lpDoors.length, base: new THREE.Matrix4().multiplyMatrices(g.matrixWorld, new THREE.Matrix4().makeTranslation(lx, 1.35, -0.6075)), open: -1 };
+      lpDoors.push(p);
       add(D.lpFoot, 0x2f363d, lx, 0.03, 0);
       add(D.lpPanel, 0x1f252b, lx, 0.5, 0.486);
       add(D.lpBtn, 0x22c55e, lx - 0.09, 0.5, 0.5); add(D.lpBtn, 0xfacc15, lx, 0.5, 0.5); add(D.lpBtn, 0x60a5fa, lx + 0.09, 0.5, 0.5);
     });
     scene.remove(g);
   });
+  // 前面 0.6015、後面 0.6135：比機台黑色觀察窗（前面 -0.605）凸出 3.5 mm，不會跟它疊在一起閃
+  const dim = new THREE.InstancedMesh(new THREE.BoxGeometry(0.64, 0.5, 0.012), mat(0x59616a, { metalness: 0.45, roughness: 0.4 }), Math.max(1, lpDoors.length));
+  dim.castShadow = false; dim.receiveShadow = true; dim.count = lpDoors.length; scene.add(dim);
+  LPD.mesh = dim;
+  lpDoors.forEach(p => setLpDoor(p, 0));
+}
+
+// Load Port 門的位置：open 0→0.3 往機台退 LP_DOOR_BACK，0.3→1 下降 LP_DOOR_DOWN（跟 FOUP 門同一套動作）
+function setLpDoor(p, open) {
+  const d = p.lpDoor; if (!d || !LPD.mesh || d.open === open) return; d.open = open;
+  LPD.tmp.makeTranslation(0, -Math.max(0, (open - .3) / .7) * 0.55, -Math.min(open / .3, 1) * 0.012);
+  LPD.m.multiplyMatrices(d.base, LPD.tmp); LPD.mesh.setMatrixAt(d.idx, LPD.m); LPD.mesh.instanceMatrix.needsUpdate = true;
 }
 
 // ---------- 軌道：接頭、分岔／合流段槽內的彎軌、合流前的三角凸塊 ----------

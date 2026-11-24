@@ -6,38 +6,47 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
 {
   const STEP = 0.3;                                   // 每一小段軌道的長度
   const samples = [];                                 // [x0, z0, x1, z1, 是否彎道]
+  const curveRuns = [];
+  // Split at the actual curvature transitions; straight and curved meshes share an endpoint.
   segs.forEach(sg => {
-    const n = Math.max(1, Math.ceil(sg.len / STEP));
-    for (let i = 0; i < n; i++) {
-      const d0 = sg.len * i / n, d1 = sg.len * (i + 1) / n;
-      if (onLifter(sg, (d0 + d1) / 2, LIFT_HALF)) continue;   // 捲揚機那段軌道是活動的（maintenance.js）
-      samples.push([...sg.at(d0), ...sg.at(d1), sg.curveAt((d0 + d1) / 2)]);   // 彎道另外用連續曲面做（下面），這裡的彎道片段會隱藏
+    const cuts=[0];let previous=sg.curveAt(0);
+    for(let d=.02;d<sg.len+.02;d+=.02){
+      const end=Math.min(d,sg.len), current=sg.curveAt(end);
+      if(current!==previous){let lo=Math.max(0,d-.02),hi=end;
+        for(let j=0;j<24;j++){const mid=(lo+hi)/2;if(sg.curveAt(mid)===previous)lo=mid;else hi=mid;}
+        cuts.push((lo+hi)/2);previous=current;
+      }
+    }
+    for(const lift of lifterCuts(sg)) cuts.push(...lift);
+    cuts.push(sg.len);cuts.sort((a,b)=>a-b);
+    for(let j=0;j+1<cuts.length;j++){
+      const a=cuts[j],b=cuts[j+1],mid=(a+b)/2;if(b-a<1e-7||onLifter(sg,mid,LIFT_HALF))continue;
+      if(sg.curveAt(mid)){curveRuns.push([sg,a,b]);continue;}
+      const n=Math.max(1,Math.ceil((b-a)/STEP));
+      for(let i=0;i<n;i++) samples.push([...sg.at(a+(b-a)*i/n),...sg.at(a+(b-a)*(i+1)/n),false]);
     }
   });
+  function lifterCuts(sg){return LIFTERS.filter(l=>l.seg===sg).map(l=>[Math.max(0,l.d-LIFT_HALF),Math.min(sg.len,l.d+LIFT_HALF)]);}
   // ---------- 彎道：把軌道斷面（倒 U 型＋底部內翻邊）沿著彎道連續掃出來，表面是光滑曲面，沒有鋸齒和接縫 ----------
   {
     // 斷面（側向, 高度），順時針；彎道比直軌抬高 3 mm、側面內縮 4 mm，跟直軌重疊的地方才不會閃
     const PROF = [[-0.31, 0.15], [0.31, 0.15], [0.31, -0.15], [0.11, -0.15], [0.11, -0.12], [0.28, -0.12], [0.28, 0.12],
-      [-0.28, 0.12], [-0.28, -0.12], [-0.11, -0.12], [-0.11, -0.15], [-0.31, -0.15]].map(([x, y]) => [x - Math.sign(x) * 0.004, y + 0.003]);
+      [-0.28, 0.12], [-0.28, -0.12], [-0.11, -0.12], [-0.11, -0.15], [-0.31, -0.15]];
     // 先找出所有彎道區段（每段前後多延伸 15 cm 跟直軌重疊），再把每種斷面沿著這些區段掃出來
-    const runs = [];
-    segs.forEach(sg => {
-      let a = null;
-      const flush = d => { if (a !== null) runs.push([sg, Math.max(0, a - 0.15), Math.min(sg.len, d + 0.15)]); a = null; };
-      for (let d = 0; d <= sg.len; d += 0.02) {
-        const c = sg.curveAt(d) && !onLifter(sg, d, LIFT_HALF);
-        if (c && a === null) a = d; else if (!c && a !== null) flush(d - 0.02);
-      }
-      flush(sg.len);
-    });
+    const runs = curveRuns;
     const runFrames = runs.map(([sg, a, b]) => {                          // 彎越急切越細：約每轉 3 度一段
       const frames = []; let last = null;
       for (let d = a; d <= b + 1e-6; d += 0.02) {
-        const f = frameAt(sg, Math.min(d, b));
+        const distance=Math.min(d,b), f = frameAt(sg,distance);
+        const pa=sg.at(Math.max(0,distance-.0001)),pb=sg.at(Math.min(sg.len,distance+.0001));
+        const tangent=Math.atan2(pb[1]-pa[1],pb[0]-pa[0]);f.th=-tangent;f.nx=-Math.sin(tangent);f.nz=Math.cos(tangent);
         if (!last) { frames.push(f); last = f; continue; }
         let dth = Math.abs(f.th - last.th); if (dth > Math.PI) dth = 2 * Math.PI - dth;
         if (dth > 0.05 || Math.hypot(f.x - last.x, f.z - last.z) > 0.8 || d + 0.02 > b) { frames.push(f); last = f; }
       }
+      const end=frameAt(sg,b),pa=sg.at(Math.max(0,b-.0001)),pb=sg.at(Math.min(sg.len,b+.0001));
+      const tangent=Math.atan2(pb[1]-pa[1],pb[0]-pa[0]);end.th=-tangent;end.nx=-Math.sin(tangent);end.nz=Math.cos(tangent);
+      if(!frames.length || Math.hypot(frames[frames.length-1].x-end.x,frames[frames.length-1].z-end.z)>1e-7)frames.push(end);
       return frames;
     });
     // 把一個封閉斷面（順時針的 [側向, 高度] 點）沿所有彎道掃成一個網格
@@ -67,8 +76,8 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
     const rect = (cx, cy, hx, hy) => [[cx - hx, cy + hy], [cx + hx, cy + hy], [cx + hx, cy - hy], [cx - hx, cy - hy]];
     sweepMesh(PROF, mat(0xa6dcc6, { metalness: 0.45, roughness: 0.4 }), true);                                       // 軌道本體
     [0.095, 0.035, -0.025, -0.085].forEach(y => [-1, 1].forEach(k =>                                                   // 側面溝槽：每邊四條
-      sweepMesh(rect(k * 0.308, y + 0.003, 0.006, 0.008), mat(0x8a939b, { metalness: 0.5 }), false)));
-    sweepMesh(rect(0, 0.113, 0.025, 0.01), mat(0x1b1f24, { roughness: 0.8 }), false);                                    // 供電線
+      sweepMesh(rect(k * 0.312, y, 0.006, 0.008), mat(0x8a939b, { metalness: 0.5 }), false)));
+    sweepMesh(rect(0, 0.11, 0.025, 0.01), mat(0x1b1f24, { roughness: 0.8 }), false);                                    // 供電線
   }
   const N = samples.length;
   const grooveMat = mat(0x8a939b, { metalness: 0.5 });
@@ -90,7 +99,7 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
   const ALU = new THREE.Color(0xd3d9de), MINT = new THREE.Color(0xa6dcc6), ZERO_M = new THREE.Matrix4().makeScale(0, 0, 0);
   const d = new THREE.Object3D();
   samples.forEach(([x0, z0, x1, z1, curve], i) => {
-    const ang = Math.atan2(-(z1 - z0), x1 - x0), len = Math.hypot(x1 - x0, z1 - z0) * (curve ? 1.2 : 1.06);   // 彎道外緣比中心線長，片段要拉長一點才不會在外緣留下鋸齒缺口
+    const ang = Math.atan2(-(z1 - z0), x1 - x0), len = Math.hypot(x1 - x0, z1 - z0);   // 彎道外緣比中心線長，片段要拉長一點才不會在外緣留下鋸齒缺口
     const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
     d.rotation.set(0, ang, 0); d.scale.set(len, 1, 1);
     // 彎道段（淺綠）稍微抬高 3 mm、側壁往內縮 4 mm：分岔／合流處直軌和彎軌重疊時，兩片才不會在同一個平面上互相閃爍（Z-fighting）
