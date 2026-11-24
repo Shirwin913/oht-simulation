@@ -28,54 +28,62 @@ const FG = (() => {
   const shellB = makeBatch();
   shellB.add(smoothNormals(shell, 50), 0xff5708, null, 0, 0, 0);   // 圓角、倒角用平滑法線，看起來光滑
   // FOUP 門獨立繪製，讓 FIMS 對接時能下降開門。
-  const solidB = makeBatch();
-  // 完整不透明底盤，封住橘色外殼底面；底緣保持平順。
-  const baseShape = foupShape(.68,.70,.065,.23);
-
-  const base = new THREE.ExtrudeGeometry(baseShape,{depth:.022,bevelEnabled:true,bevelThickness:.010,bevelSize:.012,bevelSegments:5,curveSegments:24});
-  base.rotateX(-Math.PI/2);base.translate(0,.014,0);
-  solidB.add(smoothNormals(base,60),0x303438,null,0,0,0);
-  const floor = new THREE.ExtrudeGeometry(foupShape(.62,.64,.055,.22),{depth:.049,bevelEnabled:true,bevelThickness:.008,bevelSize:.008,bevelSegments:4,curveSegments:24});
-  floor.rotateX(-Math.PI/2);floor.translate(0,.048,0);
-  solidB.add(smoothNormals(floor,60),0x34383c,null,0,0,0);
-  // 圓滑連續的底緣，不設外露齒塊。
+  // 效能：FOUP 有一千多個，不透明部分（底座、握把、flange）做兩種精細度：
+  //   遠處用低面數（約 1.9 千個三角形）、近處 32 個（跟近看晶圓同一批）換成高面數（約 7.6 千個），近看一樣圓滑
   const detailB = makeBatch();
-  [-1,1].forEach(k => {
-    // 參考照片的寬版格柵握把：上段握持面寬，下段收成 S 形支臂。
-    const gripCurve=new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-.10,.535,k*.012),new THREE.Vector3(-.105,.52,k*.095),new THREE.Vector3(-.11,.47,k*.16),new THREE.Vector3(-.10,.37,k*.17),new THREE.Vector3(-.085,.265,k*.16),new THREE.Vector3(-.07,.205,k*.095),new THREE.Vector3(-.065,.19,k*.012)
-    ]);
-    const grip=new THREE.TubeGeometry(gripCurve,32,.032,12,false);
-    grip.scale(1,1,.78);grip.translate(0,0,k*.335);
-    solidB.add(grip,0x25292c,null,0,0,0);
-    [0,1].forEach(t=>{const q=gripCurve.getPoint(t);const end=new THREE.SphereGeometry(.041,12,8);end.scale(1,.9,.65);solidB.add(end,0x2b3034,null,q.x,q.y,k*.344);});
-    for(let i=0;i<25;i++) detailB.add(new THREE.BoxGeometry(.30,.003,.025),0x783916,null,-.025,.145+i*.014,k*.265);
-    detailB.add(new THREE.BoxGeometry(.018,.39,.024),0x683416,null,-.17,.32,k*.27);
-    // 頂部透明盒殼的補強肋，以低矮橘紅構件呈現。
-    solidB.add(new THREE.BoxGeometry(.45,.012,.012),0xda430a,null,-.015,.596,k*.205);
-    solidB.add(new THREE.BoxGeometry(.014,.026,.40),0xf26513,null,k*.18,.594,0);
-  });
-  // 頂部夾取板中央為凹入的圓形定位槽，沒有凸起圓柱。
-  solidB.add(new THREE.BoxGeometry(.13,.075,.13),0x41484d,null,0,.625,0);
-  const flangeShape=foupShape(.34,.34,.025,.025);
-  const recess=new THREE.Path();recess.absarc(0,0,.058,0,Math.PI*2,true);flangeShape.holes.push(recess);
-  const flange = new THREE.ExtrudeGeometry(flangeShape,{depth:.022,bevelEnabled:true,bevelSize:.003,bevelThickness:.002,bevelSegments:1,curveSegments:16});
-  flange.rotateX(-Math.PI/2); flange.translate(0,.662,0);solidB.add(flange,0x6e757a,null,0,0,0);
-  solidB.add(new THREE.CylinderGeometry(.058,.058,.004,32),0x41484e,null,0,.661,0);
-  [-1,1].forEach(x=>[-1,1].forEach(z=>detailB.add(new THREE.CylinderGeometry(.008,.008,.006,6),0x343a40,null,x*.133,.69,z*.133)));
+  const buildSolid = (Q, detailB) => {
+    const solidB = makeBatch();
+    // 完整不透明底盤，封住橘色外殼底面；底緣保持平順。
+    const baseShape = foupShape(.68,.70,.065,.23);
+
+    const base = new THREE.ExtrudeGeometry(baseShape,{depth:.022,bevelEnabled:true,bevelThickness:.010,bevelSize:.012,bevelSegments:Q.bs,curveSegments:Q.cs});
+    base.rotateX(-Math.PI/2);base.translate(0,.014,0);
+    solidB.add(smoothNormals(base,60),0x303438,null,0,0,0);
+    const floor = new THREE.ExtrudeGeometry(foupShape(.62,.64,.055,.22),{depth:.049,bevelEnabled:true,bevelThickness:.008,bevelSize:.008,bevelSegments:Q.bs2,curveSegments:Q.cs});
+    floor.rotateX(-Math.PI/2);floor.translate(0,.048,0);
+    solidB.add(smoothNormals(floor,60),0x34383c,null,0,0,0);
+    // 圓滑連續的底緣，不設外露齒塊。
+    [-1,1].forEach(k => {
+      // 參考照片的寬版格柵握把：上段握持面寬，下段收成 S 形支臂。
+      // 握把最外緣離中心約 0.49 m：NTB 鐵架 FOUP 間距 1.0 m、STB 1.15 m，相鄰 FOUP 的握把才不會插在一起
+      const gripCurve=new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-.10,.535,k*.009),new THREE.Vector3(-.105,.52,k*.071),new THREE.Vector3(-.11,.47,k*.12),new THREE.Vector3(-.10,.37,k*.128),new THREE.Vector3(-.085,.265,k*.12),new THREE.Vector3(-.07,.205,k*.071),new THREE.Vector3(-.065,.19,k*.009)
+      ]);
+      const grip=new THREE.TubeGeometry(gripCurve,Q.tl,.032,Q.tr,false);
+      grip.scale(1,1,.78);grip.translate(0,0,k*.335);
+      solidB.add(grip,0x25292c,null,0,0,0);
+      [0,1].forEach(t=>{const q=gripCurve.getPoint(t);const end=new THREE.SphereGeometry(.041,Q.sw,Q.sh);end.scale(1,.9,.65);solidB.add(end,0x2b3034,null,q.x,q.y,k*.344);});
+      if (detailB) for(let i=0;i<25;i++) detailB.add(new THREE.BoxGeometry(.30,.003,.025),0x783916,null,-.025,.145+i*.014,k*.265);
+      if (detailB) detailB.add(new THREE.BoxGeometry(.018,.39,.024),0x683416,null,-.17,.32,k*.27);
+      // 頂部透明盒殼的補強肋，以低矮橘紅構件呈現。
+      solidB.add(new THREE.BoxGeometry(.45,.012,.012),0xda430a,null,-.015,.596,k*.205);
+      solidB.add(new THREE.BoxGeometry(.014,.026,.40),0xf26513,null,k*.18,.594,0);
+    });
+    // 頂部夾取板中央為凹入的圓形定位槽，沒有凸起圓柱。
+    solidB.add(new THREE.BoxGeometry(.13,.075,.13),0x41484d,null,0,.625,0);
+    const flangeShape=foupShape(.34,.34,.025,.025);
+    const recess=new THREE.Path();recess.absarc(0,0,.058,0,Math.PI*2,true);flangeShape.holes.push(recess);
+    const flange = new THREE.ExtrudeGeometry(flangeShape,{depth:.022,bevelEnabled:true,bevelSize:.003,bevelThickness:.002,bevelSegments:1,curveSegments:Q.fl});
+    flange.rotateX(-Math.PI/2); flange.translate(0,.662,0);solidB.add(flange,0x6e757a,null,0,0,0);
+    solidB.add(new THREE.CylinderGeometry(.058,.058,.004,Q.cy),0x41484e,null,0,.661,0);
+    if (detailB) [-1,1].forEach(x=>[-1,1].forEach(z=>detailB.add(new THREE.CylinderGeometry(.008,.008,.006,6),0x343a40,null,x*.133,.69,z*.133)));
+    return solidB.geometry();
+  };
+  const solidHi = buildSolid({ cs: 24, bs: 5, bs2: 4, tl: 32, tr: 12, sw: 12, sh: 8, fl: 16, cy: 32 }, detailB);
+  const solidLo = buildSolid({ cs: 6, bs: 2, bs2: 1, tl: 16, tr: 8, sw: 8, sh: 6, fl: 5, cy: 16 }, null);
   // 黑色圓角密封框和乳白門蓋，所有細節隨門一起移動。
   const doorB=makeBatch(),frameShape=foupShape(.63,.55,.03,.03);
   frameShape.holes.push(new THREE.Path(foupShape(.576,.498,.025,.025).getPoints(8).reverse()));
   const frame=new THREE.ExtrudeGeometry(frameShape,{depth:.014,bevelEnabled:false,curveSegments:6});
   frame.rotateY(Math.PI/2);frame.translate(.338,.335,0);doorB.add(frame,0x302c28,null,0,0,0);
-  for(const sign of [-1,1]) for(let j=0;j<5;j++) doorB.add(new THREE.BoxGeometry(.009,.006,.43),0xa74310,null,.357,.335+sign*(.10+j*.026),0);
-  [-1,1].forEach(k=>{const lock=new THREE.CylinderGeometry(.024,.024,.01,12);lock.rotateZ(Math.PI/2);doorB.add(lock,0x6e4b32,null,.36,.335,k*.17);doorB.add(new THREE.BoxGeometry(.012,.025,.006),0x2d2b29,null,.368,.335,k*.17);});
+  for(const sign of [-1,1]) for(let j=0;j<5;j++) doorB.add(new THREE.BoxGeometry(.009,.006,.43),0xa74310,null,.3525,.335+sign*(.10+j*.026),0);
+  [-1,1].forEach(k=>{const lock=new THREE.CylinderGeometry(.024,.024,.01,12);lock.rotateZ(Math.PI/2);doorB.add(lock,0x6e4b32,null,.353,.335,k*.17);doorB.add(new THREE.BoxGeometry(.012,.025,.006),0x2d2b29,null,.361,.335,k*.17);});
   const dc=document.createElement('canvas');dc.width=dc.height=256;const dx=dc.getContext('2d');
   dx.fillStyle='#a94312';dx.fillRect(0,0,256,256);dx.strokeStyle='#df7b35';dx.lineWidth=3;dx.strokeRect(11,11,234,234);
   dx.lineWidth=1;for(let i=0;i<8;i++){dx.strokeRect(28,24+i*8,200,3);dx.strokeRect(28,176+i*8,200,3);}
   const doorTex=new THREE.CanvasTexture(dc);
   return {
-    shellAll: shellB.geometry(), solid: solidB.geometry(), details: detailB.geometry(), doorTrim: doorB.geometry(),
+    shellAll: shellB.geometry(), solid: solidLo, solidHi, details: detailB.geometry(), doorTrim: doorB.geometry(),
     doorMat: new THREE.MeshStandardMaterial({map:doorTex,transparent:true,opacity:.78,roughness:.28,depthWrite:false}),
     shellMat: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, emissive: 0x3d0d00, emissiveIntensity: 0.10, roughness: 0.19,
       metalness: 0, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide }),
@@ -98,7 +106,7 @@ const FB = (() => {
   const parts = [
     [FG.solid, FG.solidMat, M(0, 0, 0), true],
     [FG.wafer, FG.waferMat, M(0.02, 0.34, 0), false],
-    [FG.labelGeo, FG.label, M(.371,.335,0,Math.PI/2), false],
+    [FG.labelGeo, FG.label, M(.3495,.335,0,Math.PI/2), false],   // 條碼貼在門板上（門板正面 x = .348），不要浮在空中
     [FG.tagGeo, tagMat, M(-.20,.608,0), false],
     [FG.shellAll, FG.shellMat, M(0, 0, 0), false],
     [new THREE.BoxGeometry(.026,.52,.60), FG.doorMat, M(.335,.335,0), false],
@@ -119,11 +127,14 @@ function setFoupMatrix(f, m) {
   const count = f.empty ? 0 : (f.waferCount ?? 25), open = f.doorOpen || 0;
   for (let i=0;i<FB.parts.length;i++) {
     const p = FB.parts[i]; FB.local.copy(p.local);
+    if (i===0 && f.detailedWafers) { p.im.setMatrixAt(f.idx, waferDetail.zero); continue; }   // 近處：換成高面數的那一份（waferDetail.solidHi）
     if (i===1) {
       if (f.detailedWafers || count===0) FB.tmp.makeScale(0,0,0);
       else { FB.local.makeScale(1,count/25,1); FB.local.setPosition(.02,.14+.18*count/25,0); FB.tmp.multiplyMatrices(m,FB.local); }
     } else {
-      if (i===2 || i===5 || i===6) { FB.local.elements[12] += open*.08; FB.local.elements[13] -= open*.57; }
+      if (i===2 || i===5 || i===6) {   // FIMS 開門：跟 Load Port 門同一套動作（detail.js setLpDoor）：先往機台退 12 mm，再一起下降 55 cm
+        FB.local.elements[12] += Math.min(open / .3, 1) * .012; FB.local.elements[13] -= Math.max(0, (open - .3) / .7) * .55;
+      }
       FB.tmp.multiplyMatrices(m,FB.local);
     }
     p.im.setMatrixAt(f.idx,FB.tmp);
@@ -133,8 +144,9 @@ function setFoupMatrix(f, m) {
 const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.Euler(), _fv = new THREE.Vector3(), _fs = new THREE.Vector3(1, 1, 1);
 function placeFoupAt(f, port) {
   f.rot = portRot(port);
-  _fm.compose(_fv.set(port.x + Math.cos(port.rot)*(port.dock || 0)*.25, port.top, port.z - Math.sin(port.rot)*(port.dock || 0)*.25), _fq.setFromEuler(_fe.set(0, f.rot, 0)), _fs);
+  _fm.compose(_fv.set(port.x + Math.cos(port.rot)*(port.dock || 0)*.245, port.top, port.z - Math.sin(port.rot)*(port.dock || 0)*.245), _fq.setFromEuler(_fe.set(0, f.rot, 0)), _fs);
   setFoupMatrix(f, _fm);
+  if (port.lpDoor) setLpDoor(port, f.doorOpen || 0);   // Load Port 門跟著 FOUP 門一起開關
 }
 // 每幀：被吊著的 FOUP 跟著夾爪走；有改動才通知 GPU 更新
 const _carryLocal = new THREE.Matrix4();
@@ -179,8 +191,12 @@ initialStbs.slice(0, Math.round(initialStbs.length * STB_INITIAL_FILL / 100)).fo
 const waferDetail = (() => {
   const mesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(.235,.235,.003,36),FG.waferMat,32*25);
   mesh.count=0; mesh.frustumCulled=false; mesh.castShadow=false; scene.add(mesh);
-  const details = new THREE.InstancedMesh(FG.details,FG.solidMat,32); details.count=0;details.frustumCulled=false;details.castShadow=false;scene.add(details);
-  return {mesh, details, selected:[], time:-Infinity, local:new THREE.Matrix4(), world:new THREE.Matrix4(), zero:new THREE.Matrix4().makeScale(0,0,0)};
+  const details = new THREE.InstancedMesh(FG.details,FG.solidMat,32);
+  const solidHi = new THREE.InstancedMesh(FG.solidHi,FG.solidMat,32); solidHi.count=0; solidHi.frustumCulled=false; solidHi.castShadow=true; scene.add(solidHi); details.count=0;details.frustumCulled=false;details.castShadow=false;scene.add(details);
+  // 正在被取出／放回的那一片晶圓再畫一次，只畫在 Load Port 開門口的洞口裡（detail.js 的 stencil），看起來是進到機台內部空間
+  const inMesh = new THREE.InstancedMesh(mesh.geometry, Object.assign(FG.waferMat.clone(), { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc }), 32);
+  inMesh.count=0; inMesh.frustumCulled=false; inMesh.castShadow=false; inMesh.renderOrder=4; scene.add(inMesh);
+  return {mesh, inMesh, details, solidHi, selected:[], time:-Infinity, local:new THREE.Matrix4(), world:new THREE.Matrix4(), zero:new THREE.Matrix4().makeScale(0,0,0)};
 })();
 function updateDetailedWafers() {
   if (BENCH) return;
@@ -196,17 +212,30 @@ function updateDetailedWafers() {
     for (const f of candidates) if (!previous.has(f)) {f.detailedWafers=true;setFoupMatrix(f,f.worldMatrix);}
     bank.selected=candidates;
   }
-  let n=0, detailCount=0;
+  let n=0, detailCount=0, nIn=0;
   for (const f of bank.selected) {
+    bank.solidHi.setMatrixAt(detailCount,f.worldMatrix);
     bank.details.setMatrixAt(detailCount++,f.worldMatrix);
     const count=f.empty?0:(f.waferCount??25), transfer=f.waferTransfer;
     for(let i=0;i<25;i++) {
       if (i<count || (transfer && transfer.index===i)) {
-        bank.local.makeTranslation(.02+(transfer && transfer.index===i?transfer.x:0),.145+i*.014,0);
+        const tr = transfer && transfer.index===i;
+        bank.local.makeTranslation(.02+(tr?transfer.x:0),.145+i*.014+(tr?transfer.lift||0:0),0);
         bank.world.multiplyMatrices(f.worldMatrix,bank.local); bank.mesh.setMatrixAt(n++,bank.world);
+        if (transfer && transfer.index===i) bank.inMesh.setMatrixAt(nIn++,bank.world);
       }
     }
   }
   bank.details.count=detailCount;if(detailCount) bank.details.instanceMatrix.needsUpdate=true;
+  bank.solidHi.count=detailCount;if(detailCount) bank.solidHi.instanceMatrix.needsUpdate=true;
   bank.mesh.count=n; if(n) bank.mesh.instanceMatrix.needsUpdate=true;
+  bank.inMesh.count=nIn; if(nIn) bank.inMesh.instanceMatrix.needsUpdate=true;
+  // 機台裡的機械手臂：近處、FOUP 已經對接開門的製程機台才畫（沒在取放時停在收回位置）
+  if (typeof drawRobots === 'function') {
+    const list = [];
+    for (const f of bank.selected) { const p = f.port; if (!p || !p.lpDoor || !(f.doorOpen > 0) || f.carrier) continue;
+      const t = f.waferTransfer, idx = t ? t.index : 12;
+      list.push({ p, armX: t ? t.arm : ARM_REACH, padTop: 1.02 + .145 + idx*.014 - .0015 - ARM_GAP + (t ? t.rise : 0) - 1.35 }); }
+    drawRobots(list);
+  }
 }

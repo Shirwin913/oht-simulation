@@ -94,15 +94,19 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 function makeLabel(text, { bg = 'rgba(15,20,28,.85)', fg = '#e6edf3', scale = 1, w = 256 } = {}) {
-  const c = document.createElement('canvas'); c.width = w; c.height = 72;
-  const ctx = c.getContext('2d');
+  const FONT = px => `bold ${px}px system-ui, "Microsoft JhengHei", sans-serif`;
+  const c = document.createElement('canvas'), ctx = c.getContext('2d');
+  ctx.font = FONT(34);
+  w = Math.max(w, Math.ceil(ctx.measureText(String(text)).width) + 44);  // 底框寬度跟著文字長度：字比較長時加寬，不會被切掉
+  c.width = w; c.height = 72;
   const tex = new THREE.CanvasTexture(c); tex.minFilter = THREE.LinearFilter;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
   sp.scale.set(2.4 * scale * w / 256, 0.675 * scale, 1);
   sp.userData.draw = t => {
     ctx.clearRect(0, 0, w, 72); ctx.fillStyle = bg; roundRect(ctx, 4, 4, w - 8, 64, 14); ctx.fill();
-    ctx.fillStyle = fg; ctx.font = 'bold 34px system-ui, "Microsoft JhengHei", sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t, w / 2, 38); tex.needsUpdate = true;
+    let px = 34; ctx.font = FONT(px);
+    while (px > 16 && ctx.measureText(t).width > w - 36) ctx.font = FONT(--px);   // 之後換成更長的字：縮小字體塞進底框
+    ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t, w / 2, 38); tex.needsUpdate = true;
   };
   sp.userData.draw(text); return sp;
 }

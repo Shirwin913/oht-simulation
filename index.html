@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OHT 天車 3D 模擬</title>
-<link rel="stylesheet" href="css/style.css?v=a86b3ea8243d">
+<link rel="stylesheet" href="css/style.css?v=eb546397ea9b">
 </head>
 <body>
 <div id="app"></div>
@@ -52,6 +52,8 @@
       <label style="flex:none;display:flex;align-items:center;gap:5px"><input type="checkbox" id="xray">透視（看車殼裡面）</label></div>
     <div class="row"><label for="gfxLevel">畫質</label><select id="gfxLevel"><option value="auto">自動</option><option value="high">高</option><option value="mid">標準</option><option value="low">省電</option></select><span class="val" id="gfxFps" style="min-width:110px">–</span></div>
     <div class="mut">沒有獨立顯卡的電腦選「標準」或「省電」會比較順；「自動」會依顯示卡和實際順暢度自己調整。</div>
+    <div class="row"><label style="flex:none;display:flex;align-items:center;gap:5px"><input type="checkbox" id="idleSlow" checked>閒置時降速（省 GPU）</label></div>
+    <div class="mut">15 秒沒動滑鼠／鍵盤：模擬執行中降到每秒 20 張畫面，暫停中降到每秒 5 張；一動滑鼠馬上恢復。</div>
     <div class="sec">模擬參數</div>
     <div class="row"><label for="stbFill">開場儲格使用率</label><select id="stbFill"><option value="40">40%</option><option value="98">98%</option><option value="99">99%</option><option value="100">100%</option></select><button id="applyStbFill">重新開始</button></div>
     <div class="mut">重新開始會重設本次模擬；運行後佔用率會隨物流變化。</div>
@@ -114,12 +116,10 @@
   <div class="ptab" data-ptab="help">
     <div class="sec">說明卡（點了會在畫面上打開）</div>
     <div class="alarmBtns helpBtns">
-      <button id="btnPriInfo">優先級與路權</button><button id="btnParkInfo">空車休息／推車</button>
-      <button id="btnCommInfo">無線 AP</button><button id="btnMeshInfo">Mesh 網狀網路</button>
-      <button id="btnAutoInfo">自主接任務</button><button id="btnE84Info">E84 交握</button><button id="btnE84Demo">▶ E84 交握動畫</button><button id="btnHandDemo">▶ 看軌道：上手／下手</button>
-      <button id="btnMaintInfo">維修區捲揚機</button>
-      <button id="btnDispatchInfo">派工與派車邏輯</button><button id="btnQtimeInfo">Q-time 是什麼</button>
-      <button id="btnDirectInfo">機台直送 vs 回儲位</button>
+      <button id="btnDispatchInfo">派工與派車</button><button id="btnPriInfo">路權與空車</button>
+      <button id="btnDirectInfo">直送與 Q-time</button><button id="btnCommInfo">無線 AP／Mesh</button>
+      <button id="btnE84Info">E84 交握＋動畫</button><button id="btnMaintInfo">維修區捲揚機</button>
+      <button id="btnHandDemo" class="span2">▶ 看軌道：上手／下手</button>
     </div>
     <div class="sec">天車狀態燈（前後燈帶）</div>
     <div class="legend">
@@ -159,29 +159,29 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="js/rng.js?v=fc291fc18429"></script>
 <script src="js/vehicle_model.js?v=dd110a72b6d9"></script>
-<script src="js/config.js?v=4cb02f420d95"></script>
+<script src="js/config.js?v=2fee3a83efe8"></script>
 <script src="js/network.js?v=bae305415968"></script>
-<script src="js/scene.js?v=36be5d1707b2"></script>
-<script src="js/track.js?v=2d26db5f5c9b"></script>
+<script src="js/scene.js?v=e3bc7778ec95"></script>
+<script src="js/track.js?v=0446ea28f8ab"></script>
 <script src="js/factory.js?v=7a01c90bbe30"></script>
-<script src="js/detail.js?v=64a1c806a82e"></script>
-<script src="js/foup.js?v=1ce88832275e"></script>
-<script src="js/process.js?v=6ceecf3a8706"></script>
-<script src="js/vehicle.js?v=55c103372490"></script>
-<script src="js/simulation.js?v=501da79208ed"></script>
+<script src="js/detail.js?v=11e50385e0ca"></script>
+<script src="js/foup.js?v=ac36d80eaa47"></script>
+<script src="js/process.js?v=3987f63d4cbb"></script>
+<script src="js/vehicle.js?v=c49ade8c7900"></script>
+<script src="js/simulation.js?v=c2c531dce731"></script>
 <script src="js/alarms.js?v=ae1d4660d22b"></script>
 <script src="js/maintenance.js?v=31ce8a600fc1"></script>
 <script src="js/comm.js?v=b1428c1154c6"></script>
 <script src="js/hmi.js?v=8b532959dd6b"></script>
 <script src="js/hmi_detail.js?v=2b58d7401742"></script>
 <script src="js/ntb.js?v=da18e0f7c5fd"></script>
-<script src="js/ui.js?v=7856671f7c37"></script>
+<script src="js/ui.js?v=e5138f7971d3"></script>
 <script src="js/walk.js?v=d859ed257565"></script>
-<script src="js/tour.js?v=a96296b4d80d"></script>
+<script src="js/tour.js?v=b95e43435dd5"></script>
 <script src="js/bench.js?v=db960b3cc62b"></script>
 <script src="js/handdemo.js?v=69e260ca3559"></script>
 <script src="js/e84demo.js?v=422a058ee327"></script>
 <script src="js/event_log.js?v=be298656496b"></script>
-<script src="js/main.js?v=10c866300ff6"></script>
+<script src="js/main.js?v=c9171612e0e6"></script>
 </body>
 </html>

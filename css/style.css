@@ -50,7 +50,7 @@ button.ok:hover { background:#166534; }
 #alarmBanner { display:none; position:fixed; top:12px; left:50%; transform:translateX(-50%); background:#b91c1c; color:#fff;
   font-weight:700; padding:8px 16px; border-radius:10px; cursor:pointer; animation:blink 1s infinite; z-index:5; }
 @keyframes blink { 50% { background:#7f1d1d; } }
-#alarmCard { display:none; position:fixed; left:12px; top:60px; width:380px; max-height:calc(100vh - 80px); overflow:auto; z-index:6;
+#alarmCard { display:none; position:fixed; left:12px; top:96px; width:380px; max-height:calc(100vh - 112px); overflow:auto; z-index:6;
   background:var(--panel); border:1px solid rgba(239,68,68,.6); border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.6; }
 #alarmCard .hd { display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:15px; color:#fca5a5; margin-bottom:4px; }
 #alarmCard h4 { margin:10px 0 2px; font-size:13px; color:#7dd3fc; }
@@ -203,6 +203,12 @@ button.ok:hover { background:#166534; }
 .helpBtns { grid-template-columns:1fr 1fr; }
 .helpBtns button { text-align:left; padding-left:10px; }
 .helpBtns button::before { content:'ⓘ '; color:var(--acc); }
+.helpBtns button.span2 { grid-column:1 / -1; }
+#btnHandDemo::before { content:''; }
+#alarmCard .infoTabs { display:flex; gap:4px; margin:2px 0 6px; border-bottom:1px solid rgba(148,163,184,.3); }
+#alarmCard .infoTabs button { flex:1; background:none; border:none; border-bottom:2px solid transparent; color:#94a3b8; padding:5px 4px; font-size:12.5px; cursor:pointer; border-radius:0; }
+#alarmCard .infoTabs button.cur { color:#e6edf3; border-bottom-color:var(--acc); font-weight:700; }
+#alarmCard .infoSub { font-size:12px; color:#94a3b8; margin-bottom:2px; }
 
 /* ===== 操作介面整理（hmi.js）===== */
 #hmi .hhead { display:grid; grid-template-columns:auto 1fr auto auto; gap:12px; align-items:center; }
@@ -490,3 +496,16 @@ button.ok:hover { background:#166534; }
 #handDemo .hdres.ok { background:rgba(16,185,129,.12); color:#a7f3d0; } #handDemo .hdres.ng { background:rgba(239,68,68,.12); color:#fecaca; }
 @media (max-width:820px) { #handDemo .hdbd { grid-template-columns:1fr; } }
 #processMode.warn { background:#92400e; border-color:#f59e0b; color:#fff; }
+
+/* 捲軸：細、深色、圓角，跟卡片的圓角外框搭配（原本瀏覽器預設是白色方形捲軸，會切掉卡片的圓角） */
+@supports not selector(::-webkit-scrollbar) { * { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.45) transparent; } }   /* Firefox；Chrome 有設這兩個屬性就會忽略下面的圓角樣式，所以只給 Firefox */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(148,163,184,.45); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(148,163,184,.7); }
+::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
+/* 說明卡不要左右捲：表格、長字自動換行 */
+#alarmCard:not(.wide) { overflow-x: hidden; }   /* 效能測試的寬卡片（.wide）表格很寬，保留左右捲 */
+#alarmCard table.kt td, #alarmCard table.kt th { white-space: normal; overflow-wrap: anywhere; }
+#alarmCard table.kt td:first-child { white-space: nowrap; }   /* 第一欄是短標題，不拆行 */
+#alarmCard:not(.wide) img, #alarmCard:not(.wide) svg, #alarmCard:not(.wide) table { max-width: 100%; }

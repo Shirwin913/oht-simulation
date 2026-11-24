@@ -79,17 +79,25 @@ let uiT = 0, dispT = 0;
 const tmp = new THREE.Vector3();
 // 畫質：限制每秒畫面數、陰影更新頻率、量 FPS（「自動」太慢時往下降一級）
 let gfxFrame = 0, gfxLast = 0, fpsN = 0, fpsT = 0, fpsLow = 0;
+// 閒置時降速：15 秒沒有滑鼠、鍵盤、觸控 → 模擬執行中每秒 20 張、暫停中每秒 5 張；一有操作馬上恢復
+function idleFps(now) {
+  if (!IDLE.on || now - IDLE.last < IDLE.ms) return 0;
+  if (walkOn || TOUR.on || e84Demo) return 0;          // 導覽、人員視角、E84 動畫時不降
+  return paused ? 5 : 20;
+}
 function gfxTick(now) {
-  const L = GFX_LEVELS[GFX.level];
-  if (L.fps && now - gfxLast < 1000 / L.fps - 2) return false;           // 省電：最多 30 FPS
-  gfxLast = now; gfxFrame++; if (!fpsT) fpsT = now;
+  const L = GFX_LEVELS[GFX.level], cap = Math.min(L.fps || 999, idleFps(now) || 999);
+  const iv = cap < 999 ? 1000 / cap : 0;
+  if (iv && now - gfxLast < iv - 2) return false;                          // 省電最多 30 FPS；閒置時再往下降
+  gfxLast = iv ? Math.max(gfxLast + iv, now - iv) : now;                   // 用固定間隔往前推，平均剛好是上限（不會因為螢幕更新率對不齊掉成一半）
+  gfxFrame++; if (!fpsT) fpsT = now;
   renderer.shadowMap.needsUpdate = L.every > 0 && gfxFrame % L.every === 0;
   if (renderer.shadowMap.needsUpdate) fitShadow();
   fpsN++; if (now - fpsT >= 1000) {
     GFX.fps = Math.round(fpsN * 1000 / (now - fpsT)); fpsN = 0; fpsT = now;
-    const el = document.getElementById('gfxFps'); if (el) el.textContent = `${GFX.fps} FPS（${GFX_LEVELS[GFX.level].name}）`;
+    const el = document.getElementById('gfxFps'); if (el) el.textContent = `${GFX.fps} FPS（${GFX_LEVELS[GFX.level].name}${idleFps(now) ? '・閒置' : ''}）`;
     // 自動：開場 5 秒後，連續 4 秒低於 25 FPS 就降一級（只降不升，避免一直跳）
-    if (GFX.pref === 'auto' && now > 5000 && GFX.level !== 'low' && !document.hidden && GFX.fps < 25) {
+    if (GFX.pref === 'auto' && now > 5000 && GFX.level !== 'low' && !document.hidden && !idleFps(now) && GFX.fps < 25) {   // 閒置降速時不算卡
       if (++fpsLow >= 4) { fpsLow = 0; const nx = GFX.level === 'high' ? 'mid' : 'low'; applyGfx(nx, `🖥 畫面太卡（${GFX.fps} FPS），畫質自動降為「${GFX_LEVELS[nx].name}」`); }
     } else fpsLow = 0;
   }

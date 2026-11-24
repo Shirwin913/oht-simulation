@@ -21,7 +21,7 @@ const PORT_TOP = 1.02;   // Load Port 表面高度
 const STB_TOP = H - 1.9;     // STB（軌道旁暫存架）表面高度
 const STB_OFFSET = 1.1;  // STB 離軌道中心的側向距離
 const STB_DWELL = 2400;   // FOUP 放在 STB 暫存的最長時間（秒，實際隨機 30%~100%）
-const FOUP_OFF = 0.74;   // FOUP 原點到夾爪距離
+const FOUP_OFF = 0.624;   // FOUP 原點（底部）到夾爪底面的距離：夾爪底部有凹槽（深 7.4 cm，vehicle.js carveGrip），FOUP 頂部 flange（0.660～0.686）整片在凹槽裡，FOUP 外殼頂部在夾爪底面下 2 cm
 const UNIT_DY = 0.07;     // 模型的側移＋捲揚單元往上移一點，接到原本外殼的滑軌下面
 const GRIP_REST = OHT_MODEL.meta.gripRest + UNIT_DY; // 夾爪收起位置（車體座標，照模型夾爪底面，約 -0.86）
 // 捲揚要放多深才能把 FOUP 放到某個 Port 上
@@ -53,3 +53,7 @@ const liftY = l => H - liftEase(l) * (H - LIFT_LOW);
 const requestedStbFill = Number(new URLSearchParams(location.search).get('stbFill') ?? 98);
 const STB_INITIAL_FILL = Number.isFinite(requestedStbFill) ? Math.max(0, Math.min(100, requestedStbFill)) : 98;
 let storageWaitSum = 0, storageWaitCount = 0;
+// 閒置時降速（main.js gfxTick）：記錄最後一次滑鼠／鍵盤／觸控的時間；設定頁可以關掉（記在這台電腦的瀏覽器裡）
+const IDLE = { ms: 15000, last: performance.now(), on: true };
+try { IDLE.on = localStorage.getItem('ohtIdleSlow') !== '0'; } catch (e) {}
+if (typeof addEventListener === 'function') ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, () => { IDLE.last = performance.now(); }, { passive: true, capture: true }));

@@ -24,7 +24,7 @@ const holdOf = nm => nm.node.hold.get(nm.inSeg.id) || 4;
 //   沒有指令的天車不一直繞圈，而是找個不擋路的地方停在軌道上休息；後面有車要過來，才往前開讓路（推車）
 //   可以停的地方：主幹線／連接線，離分岔點夠遠（不會壓到旁邊分支的車）、離下一個匯流點夠遠（不會卡住匯流鎖）
 const PUSH_GAP = 3.5, PUSH_TIME = 3;
-let pushCount = 0;     // 後車離休息車多近就「推」它；推一次至少往前開幾秒
+let pushCount = 0, preemptCount = 0;   // preemptCount：路權高的車搶走匯流鎖的次數     // 後車離休息車多近就「推」它；推一次至少往前開幾秒
 const MERGE_SET = new Set(mergeNodes);
 // 沿預設路線往前，到下一個匯流點的距離，以及是從哪一段進那個匯流點
 function nextMergeAhead(seg, d) {
@@ -104,6 +104,7 @@ function handCheck(v, pa, dt) {
 const PRI_NAME = ['一般', '急件', '特急'];
 const RANK_SEC = 20;      // 路權差一級，等於多等了 20 秒（低路權的車等久了還是輪得到，不會永遠插不進去）
 const rankOf = v => v.job ? v.job.pri * 2 + (v.carry ? 2 : 1) : 0;
+const RANK_NAME = ['空車', '一般去取貨', '一般載貨', '急件去取貨', '急件載貨', '特急去取貨', '特急載貨'];
 // 規劃從天車目前位置到 (seg, d) 的路線；太近煞不住的話就繞一圈
 function planRoute(v, seg, d) {
   const brake = v.v * v.v / (2 * 2.5 * A) + 0.05;
@@ -409,6 +410,23 @@ function stepVehicles(dt) {
     }
     n.lock = committed || best;
     if (n.lock && !committed) n.lockScore = bs;
+  }
+  // 搶鎖：路權會影響道路使用的優先順序。持鎖車還沒開到等待線、用一般減速還停得下來時，
+  //   別條支線上排最前面、路權等級比它高、而且已經靠近匯流點（等待線前 8 m 內或已在等）的車，可以把鎖搶過來；
+  //   被搶的車停在自己的等待線讓行。已經煞不住的車不會被搶（避免急煞），同一條支線上也不能超車。
+  for (const n of mergeNodes) {
+    const L = n.lock, lm = L && L.nextMerge; if (!lm || lm.node !== n) continue;
+    if (lm.dn - holdOf(lm) < L.v * L.v / (2 * A) + 0.5) continue;
+    let win = null, wr = rankOf(L);
+    for (const v of vehicles) {
+      const nm = v.nextMerge; if (!nm || nm.node !== n || nm.inSeg === lm.inSeg || front.get(n.id + '|' + nm.inSeg.id) !== v) continue;
+      const ready = ['idle', 'toPick', 'toDrop', 'toMaint'].includes(v.state) && !v.parked && ((v.waitT || 0) > 0 || v.v > 0.05);
+      if (ready && rankOf(v) > wr && ((v.waitT || 0) > 0 || nm.dn < holdOf(nm) + 8)) { wr = rankOf(v); win = v; }
+    }
+    if (win) {
+      n.lock = win; n.lockScore = Infinity; preemptCount++;
+      if (L.yieldTo !== win.id + '@' + n.id) { L.yieldTo = win.id + '@' + n.id; log(`🚦 ${win.id}（${RANK_NAME[rankOf(win)]}）路權比較高，${L.id}（${RANK_NAME[rankOf(L)]}）在匯流點前讓行`); }
+    }
   }
   for (const v of vehicles) updateVehicle(v, dt);
 }

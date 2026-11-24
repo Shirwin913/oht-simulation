@@ -18,6 +18,7 @@ const BOX_H = 0.33, BOX_Y = -0.535;   // 捲揚盒高度與中心（盒底 -0.70
 const BELT_XY = 0.22;   // 吊帶離中心的距離（前後、左右）
 // 三條吊帶（[前後, 左右]）：一側兩條（前後各一）、另一側一條（置中），三點吊掛比較穩、不會晃
 const BELT_POS = [[1, 1], [-1, 1], [0, -1]];
+const CLAW_Z = 0.185, CLAW_OPEN = 0.045;   // 開極限 0.23＋板厚，還在凹槽（±0.25）裡   // 夾爪閉合時離中心 0.185 m；開極限再往外 4.5 cm
 const GUARD_L = 0.38;    // 防墜板長度（從外殼內側伸到 FOUP 底下約 0.1）
 const GUARD_W = 0.18;    // 防墜板寬度
 const GUARD_Z = 0.3;     // 防墜板轉軸的左右位置（靠近 FOUP 兩側邊緣）
@@ -93,8 +94,16 @@ const VG = (() => {
   // 底部深色護邊（外殼形狀往外擴一點的薄片）
   const trimGeo = new THREE.ExtrudeGeometry(sh, { depth: 0.055, bevelEnabled: true, bevelThickness: 0.004, bevelSize: B + 0.008, bevelSegments: 1 });
   trimGeo.rotateX(-Math.PI / 2); trimGeo.translate(0, BODY_BOT + 0.004, 0);
+  // C 型夾爪（以 +z 那片為準，爪尖朝 -z＝中間）：藏在夾爪底部的凹槽裡（凹槽頂 y 0.074），垂直板從凹槽頂往下伸，底端爪部往內 3.2 cm
+  //   夾爪座標：FOUP flange 在 y +0.036～+0.062、邊緣在 ±0.173。閉合時垂直板內面在 0.179（離 flange 6 mm），爪尖伸到 0.149，勾在 flange 下面（爪部 y 0.016～0.026）
+  const clawB = makeBatch();
+  clawB.add(new THREE.BoxGeometry(0.24, 0.056, 0.016), 0xa9b2ba, null, 0, 0.044, 0.002);       // 垂直段（不鏽鋼色）
+  clawB.add(new THREE.BoxGeometry(0.24, 0.01, 0.032), 0x8d969e, null, 0, 0.021, -0.020);       // 爪部：往內伸到 flange 下面
+  clawB.add(new THREE.BoxGeometry(0.08, 0.006, 0.03), 0x59616a, null, 0, 0.0705, 0.004);       // 上端滑塊（貼著凹槽頂，接導軌）
+  const clawGeo = clawB.geometry();
   return {
     patMat, patGeo, trimGeo, trimMat: mat(0x26282d, { roughness: 0.7 }),
+    clawGeo, clawMat: vcMat({ metalness: 0.5, roughness: 0.4 }),
     endPanel, capGeo, visorGeo, visorLedGeo, visorMat: mat(0xdfe3e6, { roughness: 0.45, metalness: 0.15 }), guardGeo,
     guardMat: new THREE.MeshStandardMaterial({ map: guardTex, metalness: 0.35, roughness: 0.5 }),
     white: mat(0xf3f4f2, { roughness: 0.45 }), offWhite: mat(0xe3e6e6, { roughness: 0.5 }),
@@ -107,19 +116,52 @@ const VG = (() => {
 // ---------- 天車外形：使用者和同事做的 3D 模型（js/vehicle_model.js，由 OHT.glb 轉出）----------
 //   body：車體（前後外殼、頂蓋）；shift：側移＋捲揚單元（跟著側移動）；grip：夾爪（跟著捲揚上下，原點在夾爪底面）
 //   near 近看用、far 遠看用（簡化）。每個三角形一個顏色，用頂點色畫，所以一個部件只要一次 draw call
+// 夾爪模組底部往內挖一個凹槽：FOUP 被夾起來時，頂部 flange 和兩片 C 型爪都在凹槽裡
+//   模型底面是 y≈0 的一片方形（x -0.316～0.323、z ±0.316，兩個三角形），裡面的零件從 y 0.08 以上才開始，
+//   所以把底面換成「中間挖空 ±0.25 的方框」，再補四面內牆和凹槽頂（y 0.074）
+const GRIP_POCKET = { half: 0.25, depth: 0.074 };
+function carveGrip(pos, col) {
+  const P = [], C = [];
+  const n = pos.length / 9;
+  for (let t = 0; t < n; t++) {
+    const o = t * 9, flat = pos[o + 1] < 0.001 && pos[o + 4] < 0.001 && pos[o + 7] < 0.001;
+    if (flat) continue;                                                     // 拿掉原本的底面
+    for (let k = 0; k < 9; k++) { P.push(pos[o + k]); C.push(col[o + k]); }
+  }
+  const tri = (a, b, c, want, rgb) => {                                    // want：這個面要朝哪個方向（法線）
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const nn = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const pts = nn[0] * want[0] + nn[1] * want[1] + nn[2] * want[2] < 0 ? [a, c, b] : [a, b, c];
+    pts.forEach(p => { P.push(...p); C.push(...rgb); });
+  };
+  const quad = (a, b, c, d, want, rgb) => { tri(a, b, c, want, rgb); tri(a, c, d, want, rgb); };
+  const Y = -0.001, h = GRIP_POCKET.half, D = GRIP_POCKET.depth, W = [1, 1, 0.96], dark = [0.32, 0.35, 0.38], top = [0.22, 0.24, 0.26];
+  const x0 = -0.316, x1 = 0.323, z0 = -0.316, z1 = 0.316, dn = [0, -1, 0];
+  quad([x0, Y, z0], [x1, Y, z0], [x1, Y, -h], [x0, Y, -h], dn, W);           // 底面方框：前後兩條
+  quad([x0, Y, h], [x1, Y, h], [x1, Y, z1], [x0, Y, z1], dn, W);
+  quad([x0, Y, -h], [-h, Y, -h], [-h, Y, h], [x0, Y, h], dn, W);            // 左右兩條
+  quad([h, Y, -h], [x1, Y, -h], [x1, Y, h], [h, Y, h], dn, W);
+  quad([-h, Y, -h], [h, Y, -h], [h, D, -h], [-h, D, -h], [0, 0, 1], dark);   // 四面內牆（朝凹槽中間）
+  quad([-h, Y, h], [h, Y, h], [h, D, h], [-h, D, h], [0, 0, -1], dark);
+  quad([-h, Y, -h], [-h, Y, h], [-h, D, h], [-h, D, -h], [1, 0, 0], dark);
+  quad([h, Y, -h], [h, Y, h], [h, D, h], [h, D, -h], [-1, 0, 0], dark);
+  quad([-h, D, -h], [h, D, -h], [h, D, h], [-h, D, h], dn, top);            // 凹槽頂
+  return [new Float32Array(P), new Float32Array(C)];
+}
 const MODEL = (() => {
   const b64 = str => { const bin = atob(str), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; };
-  const geo = e => {
+  const geo = (e, carve) => {
     const q = new Int16Array(b64(e.p)), c = new Uint8Array(b64(e.c));
-    const pos = new Float32Array(q.length), col = new Float32Array(q.length);
+    let pos = new Float32Array(q.length), col = new Float32Array(q.length);
     for (let i = 0; i < q.length; i++) pos[i] = q[i] / 10000;
     for (let t = 0; t < e.n; t++) for (let v = 0; v < 3; v++) for (let k = 0; k < 3; k++) col[t * 9 + v * 3 + k] = c[t * 3 + k] / 255;
+    if (carve) [pos, col] = carveGrip(pos, col);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.computeVertexNormals(); return g;
   };
   const M = OHT_MODEL.meta, out = { meta: M, near: {}, far: {} };
-  for (const k of ['body', 'shift', 'grip', 'sensor']) { out.near[k] = geo(OHT_MODEL.near[k]); out.far[k] = geo(OHT_MODEL.far[k]); }
+  for (const k of ['body', 'shift', 'grip', 'sensor']) { out.near[k] = geo(OHT_MODEL.near[k], k === 'grip'); out.far[k] = geo(OHT_MODEL.far[k]); }
   out.mat = vcMat({ roughness: 0.5, metalness: 0.15 });
   // 前後狀態燈：貼在前後外殼頂部下緣的一條燈帶
   out.ledGeo = new THREE.BoxGeometry(0.012, 0.035, 0.62);
@@ -204,7 +246,12 @@ function createVehicle(seg, d) {
   // 夾爪（模型）：跟著捲揚上下
   const gripper = new THREE.Group(); sAdd(gripper, 0, GRIP_REST, 0);
   const gm = new THREE.Mesh(MODEL.near.grip, MODEL.mat); gm.castShadow = true; gripper.add(gm);
-  const fingers = [];
+  // 夾爪的兩片 C 型爪：從左右（車體 z 方向）夾住 FOUP 頂部 flange，爪尖勾在 flange 下緣
+  const fingers = [-1, 1].map(k => {
+    const f = new THREE.Mesh(VG.clawGeo, VG.clawMat); f.castShadow = true;
+    if (k < 0) f.rotation.y = Math.PI;                                    // 另一片轉 180°，爪尖一樣朝中間
+    f.userData.k = k; gripper.add(f); return f;
+  });
   // 三條吊帶：一邊兩條、另一邊一條（位置照模型）
   const beltMat = mat(0xd3d7db, { roughness: 0.6 });
   const belts = M.belts.map(([bx, bz]) => sAdd(new THREE.Mesh(new THREE.BoxGeometry(0.045, 1, 0.008), beltMat), bx, 0, bz));
@@ -215,7 +262,7 @@ function createVehicle(seg, d) {
   const guards = [];
   [-1, 1].forEach(k => {                                                  // k=+1 車頭端，k=-1 車尾端
     [-1, 1].forEach((sz, i) => {                                          // sz：左右兩片
-      const pv = new THREE.Group(); pv.position.set(k * (END_X - END_T / 2), BODY_BOT + 0.04 - i * 0.012, sz * GUARD_Z); g.add(pv);   // 外殼底部（FOUP 底面再下面一點），揮出時托住 FOUP
+      const pv = new THREE.Group(); pv.position.set(k * (END_X - END_T / 2), BODY_BOT + 0.156 - i * 0.012, sz * GUARD_Z); g.add(pv);   // 外殼底部（FOUP 底面再下面一點，跟著 FOUP_OFF 調整），揮出時托住 FOUP
       const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.06, 14), VG.gray); pv.add(pin);  // 直立轉軸
       const plate = new THREE.Mesh(VG.guardGeo, VG.guardMat); plate.castShadow = true;
       plate.position.set(-k * GUARD_L / 2, 0, -sz * GUARD_W / 2); pv.add(plate);
@@ -271,7 +318,7 @@ function placeVehicle(v, detailed = true) {
   const top = MODEL.meta.beltTop + UNIT_DY, bot = gy + MODEL.meta.beltGrip, len = Math.max(0.01, top - bot);
   v.belts.forEach(b => { b.scale.y = len; b.position.y = (top + bot) / 2; });
   // 夾爪
-  v.fingers.forEach(f => f.position.z = f.userData.k * (0.27 - 0.08 * v.claw));
+  v.fingers.forEach(f => f.position.z = f.userData.k * (CLAW_Z + CLAW_OPEN * (1 - v.claw)));   // claw：0＝開極限（往外 4.5 cm），1＝閉極限（夾住 flange）
   // 防墜板：0＝揮出托在 FOUP 下方，1＝收進外殼底部（繞直立軸水平轉動）
   v.guards.forEach(pv => pv.rotation.y = pv.userData.open * v.guard);
 }

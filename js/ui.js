@@ -85,36 +85,26 @@ document.querySelectorAll('[data-alarm]').forEach(b => b.onclick = () => {
 });
 function setShowComm(on) { showComm = on; $('showComm').checked = on; }
 $('showComm').onchange = e => setShowComm(e.target.checked);
-$('btnCommInfo').onclick = () => {                                      // 看說明時先打開連線顯示；關掉說明就恢復原本的設定
-  const prev = showComm; setShowComm(true);
-  openInfoCard('comm', () => setShowComm(prev));
-  const c = $('alarmCard'), b = document.createElement('div'); b.className = 'btns';
-  b.innerHTML = '<button id="icComm"></button>'; c.appendChild(b);
-  const sync = () => { $('icComm').textContent = showComm ? '隱藏 AP 範圍和連線' : '顯示 AP 範圍和連線'; };
-  $('icComm').onclick = () => { setShowComm(!showComm); sync(); }; sync();
-};
+$('btnCommInfo').onclick = () => openInfoGroup('net', COMM_MODE === 'mesh' ? 'mesh' : 'comm');   // 依目前的通訊方式先開對應的分頁
 $('btnE84Info').onclick = () => openInfoCard('e84');
-$('btnE84Demo').onclick = () => startE84Demo();
 $('btnHandDemo').onclick = () => openHandDemo();
 $('apCap').oninput = e => { AP_CAP = +e.target.value; $('apCapVal').textContent = AP_CAP + ' 台'; };
 $('gwCap').oninput = e => { GW_CAP = +e.target.value; $('gwCapVal').textContent = GW_CAP + ' 台'; };
 $('relayCap').oninput = e => { RELAY_CAP = +e.target.value; $('relayCapVal').textContent = RELAY_CAP + ' 台'; };
 $('commMode').onchange = e => { setCommMode(e.target.value); setShowComm(true); updateUI(); };   // 切換時自動打開顯示，才看得出差別
 $('dispMode').onchange = e => { DISPATCH_MODE = e.target.value; log(DISPATCH_MODE === 'auto' ? '🤝 派車方式切換：天車自主接任務（競標）' : '🖥 派車方式切換：中央派車（MCS 指定最近的車）'); updateUI(); };
-$('btnMeshInfo').onclick = () => { const prev = showComm; setShowComm(true); openInfoCard('mesh', () => setShowComm(prev)); };
-$('btnAutoInfo').onclick = () => openInfoCard('auto');
 $('btnHot').onclick = () => { insertHotLot(); updateUI(); };
-$('btnPriInfo').onclick = () => openInfoCard('pri');
-$('btnParkInfo').onclick = () => openInfoCard('park');
+$('btnPriInfo').onclick = () => openInfoGroup('traffic');
 $('gfxLevel').value = GFX.pref;
+$('idleSlow').checked = IDLE.on;
+$('idleSlow').onchange = e => { IDLE.on = e.target.checked; IDLE.last = performance.now(); try { localStorage.setItem('ohtIdleSlow', IDLE.on ? '1' : '0'); } catch (er) {} };
 $('gfxLevel').onchange = e => {                                         // 畫質：記在這台電腦的瀏覽器裡，下次開也用同樣設定
   GFX.pref = e.target.value; try { localStorage.setItem('ohtGfx', GFX.pref); } catch (err) {}
   const lv = GFX.pref === 'auto' ? (GFX.weak ? 'mid' : 'high') : GFX.pref;
   applyGfx(lv, `🖥 畫質：${GFX.pref === 'auto' ? '自動（' + GFX_LEVELS[lv].name + '）' : GFX_LEVELS[lv].name}`);
 };
-$('btnQtimeInfo').onclick = () => openInfoCard('qtime');
-$('btnDispatchInfo').onclick = () => openInfoCard('dispatch');
-$('btnDirectInfo').onclick = () => openInfoCard('direct');
+$('btnDispatchInfo').onclick = () => openInfoGroup('dispatch', DISPATCH_MODE === 'auto' ? 'auto' : 'dispatch');
+$('btnDirectInfo').onclick = () => openInfoGroup('flow');
 $('btnPm').onclick = () => { const v = sendPm(); if (v) setFollow(v); updateUI(); };
 $('btnMaintView').onclick = () => focusMaint(LIFTERS[0]);
 $('btnMaintView2').onclick = () => focusMaint(LIFTERS[1]);
@@ -195,6 +185,9 @@ const INFO_CARDS = {
     <ol><li>特急載貨</li><li>特急去取貨</li><li>急件載貨</li><li>急件去取貨</li><li>一般載貨</li><li>一般去取貨</li><li>空車（閒置、休息、去保養）</li></ol>
     <p>路權每高一級，等於多等了 ${RANK_SEC} 秒。所以急件會先過，但一般的車等久了分數會一直加，最後還是輪得到，不會永遠插不進去。
     已經煞不住、一定會開過匯流點的車例外，一律先讓它過（避免急煞）。</p>
+    <h4>路權高的車可以搶鎖</h4><p>路權會影響道路使用的優先順序：鎖已經給了路權比較低的車，但那台車還沒開到等待線、還停得下來時，
+    另一條支線上路權等級比較高、已經靠近匯流點的車可以把鎖搶過來，原本的車停在等待線讓它先過（紀錄會寫「V47（急件載貨）路權比較高，V31（一般去取貨）在匯流點前讓行」）。</p>
+    <p>急件還是可能要等的情況：對方已經過了等待線、煞不住了；急件前面同一條軌道上有車（軌道上不能超車）；急件還停在 Port 取放貨；或對方的路權等級跟它一樣高或更高。</p>
     <ul class="impact"><li>面板上的表格可以比較各優先級的平均等車時間、搬運週期</li><li>按「插一筆特急」，把一個還沒派車的 Lot 改成特急，看它怎麼插隊</li></ul>
     <p class="mut">各廠的優先級分幾級、路權怎麼算都不一樣，這裡是通用的簡化版，實際以各廠 MCS 設定為準。</p>`],
   comm: ['📶 天車怎麼跟控制系統連線（無線 AP）', `
@@ -308,6 +301,31 @@ function openInfoCard(kind, onClose) {
   c.style.display = 'block';
   c.querySelectorAll('[data-run="e84demo"]').forEach(b => b.onclick = () => { c.style.display = 'none'; startE84Demo(); });
   $('acClose').onclick = () => { c.style.display = 'none'; if (onClose) onClose(); };
+}
+// 說明卡合併：同一個主題的幾張卡放在一起，卡片上方用分頁切換
+const INFO_GROUPS = {
+  dispatch: { title: '📋 派工與派車', tabs: [['dispatch', '派工與派車邏輯'], ['auto', '中央派車 vs 自主接任務']] },
+  traffic: { title: '🚦 路權與空車休息', tabs: [['pri', '優先級與路權'], ['park', '空車休息／推車']] },
+  flow: { title: '🔀 搬運流向與 Q-time', tabs: [['direct', '機台直送 vs 回儲位'], ['qtime', 'Q-time 是什麼']] },
+  net: { title: '📶 無線通訊', tabs: [['comm', '固定無線 AP'], ['mesh', 'Mesh 網狀網路']],
+    open: () => { const prev = showComm; setShowComm(true); return () => setShowComm(prev); },   // 看說明時先打開連線顯示；關掉說明就恢復原本的設定
+    extra: () => `<div class="btns"><button id="icComm">${showComm ? '隱藏' : '顯示'}無線範圍和連線</button></div>` },
+};
+function openInfoGroup(name, tab) {
+  const G = INFO_GROUPS[name], restore = G.open ? G.open() : null;
+  const show = key => {
+    openInfoCard(key, restore);
+    const c = $('alarmCard'), hd = c.querySelector('.hd');
+    hd.firstElementChild.textContent = G.title;
+    const bar = document.createElement('div'); bar.className = 'infoTabs';
+    bar.innerHTML = G.tabs.map(([k, t]) => `<button data-k="${k}" class="${k === key ? 'cur' : ''}">${t}</button>`).join('');
+    hd.after(bar);
+    bar.querySelectorAll('button').forEach(b => b.onclick = () => { if (b.dataset.k !== key) show(b.dataset.k); });
+    const t0 = INFO_CARDS[key][0]; const sub = document.createElement('div'); sub.className = 'infoSub'; sub.textContent = t0; bar.after(sub);
+    if (G.extra) { c.insertAdjacentHTML('beforeend', G.extra()); const b = $('icComm'); if (b) b.onclick = () => { setShowComm(!showComm); b.textContent = (showComm ? '隱藏' : '顯示') + '無線範圍和連線'; }; }
+    c.scrollTop = 0;
+  };
+  show(tab || G.tabs[0][0]);
 }
 
 // 只變更下一次初始化的佔用率，不在運行途中憑空增減貨物。

@@ -101,7 +101,7 @@ const CHAPTERS = [
     { t: '派車', x: '有空車時，系統會先派特急。等它被派到車…', el: '.priBox', wait: () => TOUR.ctx.hot && TOUR.ctx.hot.job && TOUR.ctx.hot.job.vehicle },
     { t: '跟隨特急的車', x: '天車名牌上會標「特急」。在匯流點，特急載貨的車路權最大，其他車要讓它先過；但等很久的一般車分數也會一直加，不會永遠插不進去。', pre: () => { const h = TOUR.ctx.hot; TOUR.ctx.v = h && h.job && h.job.vehicle; if (TOUR.ctx.v) setFollow(TOUR.ctx.v); }, el: '#followBar' },
     { t: '路權規則', x: '「說明」裡有完整的路權排序和規則。', el: '#btnPriInfo', act: true },
-    { t: '空車休息、推車', x: '沒接到指令的空車會停在軌道上休息，後面有車要過才會被「推」著往前開。按「休息／推車」可以看說明。這章結束。', el: '#btnParkInfo', act: true },
+    { t: '空車休息、推車', x: '沒接到指令的空車會停在軌道上休息，後面有車要過才會被「推」著往前開。「路權與空車休息」說明卡的第二頁有完整說明。這章結束。', el: '#btnPriInfo', act: { fn: () => openInfoGroup('traffic', 'park') } },
   ] },
   { name: '5. 下線與保養（捲揚機）', steps: [
     { t: '挑一台空車', x: '跟隨一台沒有任務的空車。', pre: () => { closeCards(); closeHmi(); followPick(u => u.state === 'idle' && !u.job); }, el: '#followBar' },

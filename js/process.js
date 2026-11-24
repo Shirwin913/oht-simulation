@@ -1,5 +1,5 @@
 // Load Port MOVIN / MOVOUT 與晶圓出入；加工時間沿用 procTime。
-const DOCK_DISTANCE = .25, DOCK_SECONDS = 3, FOUP_DOOR_SECONDS = 2;
+const DOCK_DISTANCE = .245, DOCK_SECONDS = 3, FOUP_DOOR_SECONDS = 2;
 function machineCycleStart(p, f, duration) {
   if (p.owner.type !== 'machine') return;
   if (f.empty) { f.state='ready'; f.outputKind='stb'; f.waferCount=0; f.doorOpen=0; p.dock=0; p.processStage='空 FOUP，等待回儲位'; return; }
@@ -8,16 +8,32 @@ function machineCycleStart(p, f, duration) {
   f.storageWaitingSince = null; delete f.outputKind;
   p.dock = 0; p.processStage = 'MOVIN 前移對接';
 }
+// 每一片晶圓的取放（機械手臂吸盤式托片）：一片的伸出＋吸起＋收回約 3 秒（模擬時間：伸出 1.2 秒、吸起 0.6 秒、收回 1.2 秒），其餘時間停在機台裡
+//   取出：托片空著伸進 FOUP（停在晶圓下面 4 mm）→ 往上抬，吸住晶圓、抬離晶圓槽 8 mm → 帶著晶圓收回機台 → 晶圓送進機台內部，手臂等下一片
+//   放回：手臂托著晶圓在機台裡等 → 帶著晶圓伸進 FOUP → 往下降，晶圓放回晶圓槽 → 托片空著收回
+//   x：晶圓往機台移動的距離；arm：托片伸出量（0＝在 FOUP 裡的晶圓中心）；rise：托片從「晶圓下 4 mm」往上抬了多少；lift：晶圓被抬高多少
+const ARM_REACH = .62, ARM_GAP = .004, ARM_LIFT = .008, ARM_MOVE = 3;
+const armEase = t => t <= 0 ? 0 : t >= 1 ? 1 : t < .5 ? 2*t*t : 1 - 2*(1-t)*(1-t);   // 加速、減速
 function updateWaferProgress(f) {
-  const progress = Math.max(0,Math.min(1,1-f.timer/f.processDuration));
+  const progress = Math.max(0,Math.min(1,1-f.timer/f.processDuration)), H = ARM_GAP + ARM_LIFT;
+  const cyc = .35*f.processDuration/25, M = Math.min(ARM_MOVE, cyc*.9);              // 一片的時間、手臂動作佔多久
+  const T = (index, arm, rise, x) => ({ index, arm, rise, x, lift: Math.max(0, rise - ARM_GAP) });
   f.waferTransfer = null;
   if (progress < .35) {
-    const u = progress/.35*25, n = Math.floor(u); f.waferCount = 25-n;
-    f.waferTransfer = {index:24-n, x:(u-n)*.62};
+    const u = progress/.35*25, n = Math.floor(u), e = (u-n)*cyc, k = 24-n; f.waferCount = 25-n;
+    if (e < .4*M) f.waferTransfer = T(k, ARM_REACH*(1-armEase(e/(.4*M))), 0, 0);                    // 空著伸進去
+    else if (e < .6*M) f.waferTransfer = T(k, 0, armEase((e-.4*M)/(.2*M))*H, 0);                      // 吸起
+    else if (e < M) { const a = ARM_REACH*armEase((e-.6*M)/(.4*M)); f.waferTransfer = T(k, a, H, a); }  // 帶著晶圓收回
+    else { f.waferCount = 24-n; if (k > 0) f.waferTransfer = T(k-1, ARM_REACH, 0, 0); }             // 晶圓已送進機台，手臂對準下一片等著
   } else if (progress < .65) f.waferCount = 0;
   else {
-    const u = Math.min(25,(progress-.65)/.35*25), n = Math.floor(u); f.waferCount = n;
-    if (n < 25) f.waferTransfer = {index:n, x:(1-(u-n))*.62};
+    const u = Math.min(25,(progress-.65)/.35*25), n = Math.floor(u), e = (u-n)*cyc, w = cyc - M; f.waferCount = n;
+    if (n < 25) {
+      if (e < w) f.waferTransfer = T(n, ARM_REACH, H, ARM_REACH);                                     // 托著晶圓在機台裡等
+      else if (e < w+.4*M) { const a = ARM_REACH*(1-armEase((e-w)/(.4*M))); f.waferTransfer = T(n, a, H, a); }   // 帶著晶圓伸進去
+      else if (e < w+.6*M) f.waferTransfer = T(n, 0, H*(1-armEase((e-w-.4*M)/(.2*M))), 0);           // 放下
+      else f.waferTransfer = T(n, ARM_REACH*armEase((e-w-.6*M)/(.4*M)), 0, 0);                        // 空著收回
+    }
   }
 }
 function stepMachinePort(p, dt) {

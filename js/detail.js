@@ -24,7 +24,7 @@
 
 // ---------- 機台與 Load Port 細節 ----------
 const detailBatch = makeBatch();
-const LPD = { mesh: null, tmp: new THREE.Matrix4(), m: new THREE.Matrix4() };
+const LPD = { mesh: null, tmp: new THREE.Matrix4(), m: new THREE.Matrix4(), s: new THREE.Matrix4() };
 {
   const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
   const D = {
@@ -80,7 +80,72 @@ const LPD = { mesh: null, tmp: new THREE.Matrix4(), m: new THREE.Matrix4() };
   const dim = new THREE.InstancedMesh(new THREE.BoxGeometry(0.64, 0.5, 0.012), mat(0x59616a, { metalness: 0.45, roughness: 0.4 }), Math.max(1, lpDoors.length));
   dim.castShadow = false; dim.receiveShadow = true; dim.count = lpDoors.length; scene.add(dim);
   LPD.mesh = dim;
+  // 開門口後面的機台內部空間（EFEM）：晶圓被取出時是「進到一個空間裡」，不是被機台正面切掉
+  //   機台正面的黑色觀察窗是實心的，挖不開，所以用模板緩衝（stencil）：
+  //   1. 開門口畫一片看不見的「洞口」，只在 stencil 寫 1（被 Load Port 框、FOUP、晶圓擋住的地方就不會寫到）
+  //   2. 在洞口範圍裡把深度重設到機台裡面（一片看不見的板子，深度測試一律通過）
+  //   3. 再畫內部空間（深灰色的盒子內壁）、機械手臂和正在被取出的晶圓，都只畫在 stencil＝1 的地方
+  const N = Math.max(1, lpDoors.length), st = (m, func, op) => Object.assign(m, { stencilWrite: true, stencilRef: 1, stencilFunc: func, stencilZPass: op || THREE.KeepStencilOp });
+  const portal = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.66, 1), st(new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }), THREE.AlwaysStencilFunc, THREE.ReplaceStencilOp), N);
+  const reset = new THREE.InstancedMesh(new THREE.PlaneGeometry(2.5, 2.5), st(new THREE.MeshBasicMaterial({ colorWrite: false, depthFunc: THREE.AlwaysDepth }), THREE.EqualStencilFunc), N);
+  const room = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, 0.6, 0.9), st(mat(0x3a4148, { side: THREE.BackSide, roughness: 0.8 }), THREE.EqualStencilFunc), N);
+  [[portal, 1], [reset, 2], [room, 3]].forEach(([m, o]) => { m.renderOrder = o; m.frustumCulled = false; m.castShadow = false; m.count = lpDoors.length; scene.add(m); });
+  Object.assign(LPD, { portal, reset, room, roomM: new THREE.Matrix4().makeTranslation(0, 0, -0.4475), resetM: new THREE.Matrix4().makeTranslation(0, 0, -0.92) });
+  lpDoors.forEach(p => { const d = p.lpDoor;
+    LPD.m.multiplyMatrices(d.base, LPD.roomM); room.setMatrixAt(d.idx, LPD.m);       // 內部空間（EFEM）：寬 1.2 m、往機台裡 90 cm，裡面放取晶圓的機械手臂
+    LPD.m.multiplyMatrices(d.base, LPD.resetM); reset.setMatrixAt(d.idx, LPD.m); });
   lpDoors.forEach(p => setLpDoor(p, 0));
+}
+
+// ---------- EFEM 機械手臂（青蛙腿型 frog-leg＋吸盤式托片）：從 FOUP 逐片取出／放回晶圓 ----------
+//   座標用 Load Port 門的座標（d.base：x 左右、y 上下、+z 朝軌道／FOUP）。手臂中心（升降立柱）在開門口後面 0.8 m。
+//   青蛙腿：中心兩隻上臂（各 0.4 m）往左右對稱張開，各接一隻前臂（0.4 m），兩隻前臂在手腕會合；
+//   上臂張開角度 φ＝acos(D／0.8)（D＝中心到手腕距離），兩隻手臂同時往內收，手腕就沿直線往前推，托片一直朝 FOUP。
+//   托片從手腕往前 0.38 m 是吸盤中心（＝晶圓中心）：托片伸進 FOUP 時，手腕還在機台裡面。
+//   只畫在近處的機台（最多 32 台，跟近看晶圓同一批）；每個零件畫兩次：一般的一份＋只畫在開門口洞口裡的一份
+const ARM = { L: 0.4, blade: 0.38, colZ: -0.8, floorY: -0.3, max: 32 };
+const robot = (() => {
+  const st = m => Object.assign(m.clone(), { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc });
+  const link = (L, w, t, col) => { const b = makeBatch();                                     // 一隻手臂：沿 +x，兩端圓頭
+    b.add(new THREE.BoxGeometry(L, t, w), col, null, L / 2, 0, 0);
+    [0, L].forEach(x => b.add(new THREE.CylinderGeometry(w / 2, w / 2, t, 20), col, null, x, 0, 0)); return b.geometry(); };
+  const col = (() => { const b = makeBatch();                                                  // 立柱（高度用 scale.y）＋頂端的轉盤
+    b.add(new THREE.CylinderGeometry(0.075, 0.085, 1, 24), 0x8b949c, null, 0, 0.5, 0); return b.geometry(); })();
+  const hub = new THREE.CylinderGeometry(0.055, 0.055, 0.03, 24);                                 // 手腕會合處的轉軸
+  const blade = (() => { const b = makeBatch();                                               // 托片：根部＋兩根叉指，叉指上三個黑色吸盤
+    b.add(new THREE.BoxGeometry(0.16, 0.004, 0.07), 0xd9dee2, null, 0.08, 0, 0);
+    [-1, 1].forEach(k => b.add(new THREE.BoxGeometry(0.3, 0.004, 0.022), 0xd9dee2, null, 0.31, 0, k * 0.028));
+    [[0.3, -0.028], [0.3, 0.028], [0.44, 0]].forEach(([x, z]) => b.add(new THREE.CylinderGeometry(0.011, 0.011, 0.0015, 14), 0x1a1d21, null, x, 0.00275, z));
+    b.add(new THREE.BoxGeometry(0.03, 0.004, 0.078), 0xd9dee2, null, 0.44, 0, 0); return b.geometry(); })();
+  // 每個零件：[形狀, 每台幾個]
+  const defs = [[col, 1], [link(ARM.L, 0.1, 0.026, 0xe7eaed), 2], [link(ARM.L, 0.075, 0.02, 0xdfe3e7), 2], [hub, 1], [blade, 1]];
+  const parts = defs.map(([g, k], idx) => {
+    const m = idx === 3 ? mat(0xb7bec5, { metalness: 0.45, roughness: 0.4 }) : vcMat({ metalness: 0.3, roughness: 0.45 });
+    return [m, st(m)].map((mm, i) => { const im = new THREE.InstancedMesh(g, mm, ARM.max * k);
+      im.count = 0; im.frustumCulled = false; im.castShadow = false; im.renderOrder = i ? 4 : 0; scene.add(im); return im; });
+  });
+  return { parts, per: defs.map(d => d[1]), m: new THREE.Matrix4(), t: new THREE.Matrix4(), r: new THREE.Matrix4(), sc: new THREE.Matrix4() };
+})();
+// 一台手臂的姿勢：armX＝托片伸出量（0＝吸盤在 FOUP 裡的晶圓中心，0.62＝收回機台裡），padTop＝吸盤上緣高度（門座標）
+function robotPose(p, n, armX, padTop) {
+  const d = p.lpDoor, R = robot, put = (k, slot, x, y, z, ang, sy) => {
+    R.t.makeTranslation(x, y, z).multiply(R.r.makeRotationY(ang)); if (sy) R.t.multiply(R.sc.makeScale(1, sy, 1));
+    R.m.multiplyMatrices(d.base, R.t); R.parts[k].forEach(im => im.setMatrixAt(n * R.per[k] + slot, R.m)); };
+  const L = ARM.L, pz = 0.3425 - armX, wz = pz - ARM.blade, D = Math.max(0.08, Math.min(2 * L - 1e-3, wz - ARM.colZ));
+  const phi = Math.acos(D / (2 * L)), ex = L * Math.sin(phi), ez = ARM.colZ + L * Math.cos(phi), wzz = ARM.colZ + D;
+  const yB = padTop - 0.0015 - 0.002, y2 = yB - 0.014, y1 = y2 - 0.023, yc = y1 - 0.013;
+  put(0, 0, 0, ARM.floorY, ARM.colZ, 0, Math.max(0.02, yc - ARM.floorY));                       // 立柱（升降軸）
+  [-1, 1].forEach((k, i) => {
+    put(1, i, 0, y1, ARM.colZ, Math.atan2(-(ez - ARM.colZ), k * ex), 0);                         // 上臂：中心 → 左／右手肘
+    put(2, i, k * ex, y2, ez, Math.atan2(-(wzz - ez), -k * ex), 0);                              // 前臂：手肘 → 手腕
+  });
+  put(3, 0, 0, y2, wzz, 0, 0);                                                                  // 手腕轉軸
+  put(4, 0, 0, yB, wzz, -Math.PI / 2, 0);                                                        // 托片：一直朝 FOUP（+z）
+}
+function drawRobots(list) {                                                                      // list：[{ p, armX, padTop }]
+  const n = Math.min(list.length, ARM.max);
+  for (let i = 0; i < n; i++) robotPose(list[i].p, i, list[i].armX, list[i].padTop);
+  robot.parts.forEach((pp, k) => pp.forEach(im => { im.count = n * robot.per[k]; if (n) im.instanceMatrix.needsUpdate = true; }));
 }
 
 // Load Port 門的位置：open 0→0.3 往機台退 LP_DOOR_BACK，0.3→1 下降 LP_DOOR_DOWN（跟 FOUP 門同一套動作）
@@ -88,6 +153,13 @@ function setLpDoor(p, open) {
   const d = p.lpDoor; if (!d || !LPD.mesh || d.open === open) return; d.open = open;
   LPD.tmp.makeTranslation(0, -Math.max(0, (open - .3) / .7) * 0.55, -Math.min(open / .3, 1) * 0.012);
   LPD.m.multiplyMatrices(d.base, LPD.tmp); LPD.mesh.setMatrixAt(d.idx, LPD.m); LPD.mesh.instanceMatrix.needsUpdate = true;
+  // 洞口：門上緣以上、開門口上緣（1.62）以下；門沒開時不畫
+  if (LPD.portal) {
+    const lo = Math.max(1.09, 1.60 - Math.max(0, (open - .3) / .7) * 0.55) - 1.35, hi = 1.62 - 1.35;
+    if (open <= 0 || hi - lo < 0.005) LPD.tmp.makeScale(0, 0, 0);
+    else LPD.tmp.makeTranslation(0, (lo + hi) / 2, 0.0085).multiply(LPD.s.makeScale(1, hi - lo, 1));   // z -0.599：在 Load Port 面板後面、黑色觀察窗前面
+    LPD.m.multiplyMatrices(d.base, LPD.tmp); LPD.portal.setMatrixAt(d.idx, LPD.m); LPD.portal.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // ---------- 軌道：接頭、分岔／合流段槽內的彎軌、合流前的三角凸塊 ----------

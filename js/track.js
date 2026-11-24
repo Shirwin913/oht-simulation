@@ -2,7 +2,9 @@
 
 // 軌道：C 形鋁擠型（下方開槽），天車的走行部在軌道裡面跑
 //   直線段鋁色、彎道段淺綠色；頂板下方有非接觸供電線；外側有溝槽
-const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
+// 軌道頂面是一大片平面：反光太強時，「高」畫質的環境反射會把天花板燈條照成一塊一塊的亮斑（彎道最明顯），所以霧一點、反射弱一點
+const RAIL_LOOK = { metalness: 0.45, roughness: 0.7, envMapIntensity: 0.2 };
+const railMat = mat(0xffffff, RAIL_LOOK);
 {
   const STEP = 0.3;                                   // 每一小段軌道的長度
   const samples = [];                                 // [x0, z0, x1, z1, 是否彎道]
@@ -29,10 +31,10 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
   function lifterCuts(sg){return LIFTERS.filter(l=>l.seg===sg).map(l=>[Math.max(0,l.d-LIFT_HALF),Math.min(sg.len,l.d+LIFT_HALF)]);}
   // ---------- 彎道：把軌道斷面（倒 U 型＋底部內翻邊）沿著彎道連續掃出來，表面是光滑曲面，沒有鋸齒和接縫 ----------
   {
-    // 斷面（側向, 高度），順時針；彎道比直軌抬高 3 mm、側面內縮 4 mm，跟直軌重疊的地方才不會閃
+    // Cross-section matches straight rails; depth bias resolves branch/merge surface overlap.
     const PROF = [[-0.31, 0.15], [0.31, 0.15], [0.31, -0.15], [0.11, -0.15], [0.11, -0.12], [0.28, -0.12], [0.28, 0.12],
       [-0.28, 0.12], [-0.28, -0.12], [-0.11, -0.12], [-0.11, -0.15], [-0.31, -0.15]];
-    // 先找出所有彎道區段（每段前後多延伸 15 cm 跟直軌重疊），再把每種斷面沿著這些區段掃出來
+    // Sweep only the exact curved intervals, without extending into adjoining straights.
     const runs = curveRuns;
     const runFrames = runs.map(([sg, a, b]) => {                          // 彎越急切越細：約每轉 3 度一段
       const frames = []; let last = null;
@@ -51,6 +53,11 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
     });
     // 把一個封閉斷面（順時針的 [側向, 高度] 點）沿所有彎道掃成一個網格
     const sweepMesh = (prof, material, cast) => {
+      // Branch/merge paths share a footprint even when their endpoints meet exactly.
+      // Resolve coplanar fragments consistently without raising or shrinking the rail.
+      material.polygonOffset = true;
+      material.polygonOffsetFactor = -1;
+      material.polygonOffsetUnits = -4;
       const pos = [], nor = [];
       const edgeN = prof.map((p, k) => { const q = prof[(k + 1) % prof.length], dx = q[0] - p[0], dy = q[1] - p[1], l = Math.hypot(dx, dy); return [-dy / l, dx / l]; });
       const ring = f => prof.map(([x, y]) => [f.x + x * f.nx, H + y, f.z + x * f.nz]);
@@ -71,10 +78,10 @@ const railMat = mat(0xffffff, { metalness: 0.45, roughness: 0.4 });
       });
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-      const m = new THREE.Mesh(g, material); m.castShadow = cast; m.frustumCulled = false; scene.add(m);
+      const m = new THREE.Mesh(g, material); m.renderOrder = 1; m.castShadow = cast; m.frustumCulled = false; scene.add(m);
     };
     const rect = (cx, cy, hx, hy) => [[cx - hx, cy + hy], [cx + hx, cy + hy], [cx + hx, cy - hy], [cx - hx, cy - hy]];
-    sweepMesh(PROF, mat(0xa6dcc6, { metalness: 0.45, roughness: 0.4 }), true);                                       // 軌道本體
+    sweepMesh(PROF, mat(0xa6dcc6, RAIL_LOOK), true);                                       // 軌道本體
     [0.095, 0.035, -0.025, -0.085].forEach(y => [-1, 1].forEach(k =>                                                   // 側面溝槽：每邊四條
       sweepMesh(rect(k * 0.312, y, 0.006, 0.008), mat(0x8a939b, { metalness: 0.5 }), false)));
     sweepMesh(rect(0, 0.11, 0.025, 0.01), mat(0x1b1f24, { roughness: 0.8 }), false);                                    // 供電線
