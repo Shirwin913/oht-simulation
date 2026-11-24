@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OHT 天車 3D 模擬</title>
-<link rel="stylesheet" href="css/style.css?v=628132e3b584">
+<link rel="stylesheet" href="css/style.css?v=a86b3ea8243d">
 </head>
 <body>
 <div id="app"></div>
@@ -38,7 +38,7 @@
       <div class="stat"><div class="k">天車數</div><div class="v" id="vehTotal">0</div></div>
     </div>
     <div class="card"><div class="ch">📦 儲位與機台出貨</div><div id="storageInfo"></div></div>
-    <div class="card"><div class="ch">Load Port 對接與晶圓</div><div class="row"><select id="processPort" aria-label="觀察 Load Port"></select><button id="processView">查看機台</button></div><div id="processInfo"></div></div>
+    <div class="card"><div class="ch">Load Port 對接與晶圓</div><div class="row"><select id="processPort" aria-label="觀察 Load Port"></select><button id="processView">查看機台</button><button id="processMode" title="切換這個 Load Port 的 Auto／Manual 模式">Auto</button></div><div id="processInfo"></div></div>
     <div class="sec">天車狀態（點選可跟隨）</div>
     <div style="max-height:240px;overflow:auto"><table><tbody id="vehList"></tbody></table></div>
     <div class="sec">事件紀錄</div>
@@ -166,21 +166,21 @@
 <script src="js/factory.js?v=7a01c90bbe30"></script>
 <script src="js/detail.js?v=ecb7523b47ac"></script>
 <script src="js/foup.js?v=66ad947f451f"></script>
-<script src="js/process.js?v=5b6bcc2b6826"></script>
+<script src="js/process.js?v=6ceecf3a8706"></script>
 <script src="js/vehicle.js?v=55c103372490"></script>
-<script src="js/simulation.js?v=5a1dd7a6c522"></script>
-<script src="js/alarms.js?v=ef84c0c47269"></script>
+<script src="js/simulation.js?v=501da79208ed"></script>
+<script src="js/alarms.js?v=ae1d4660d22b"></script>
 <script src="js/maintenance.js?v=31ce8a600fc1"></script>
 <script src="js/comm.js?v=b1428c1154c6"></script>
-<script src="js/hmi.js?v=44c952c9ab3a"></script>
+<script src="js/hmi.js?v=8b532959dd6b"></script>
 <script src="js/hmi_detail.js?v=2b58d7401742"></script>
 <script src="js/ntb.js?v=da18e0f7c5fd"></script>
-<script src="js/ui.js?v=816c5980bd7f"></script>
+<script src="js/ui.js?v=7856671f7c37"></script>
 <script src="js/walk.js?v=d859ed257565"></script>
 <script src="js/tour.js?v=a96296b4d80d"></script>
 <script src="js/bench.js?v=db960b3cc62b"></script>
 <script src="js/handdemo.js?v=69e260ca3559"></script>
-<script src="js/e84demo.js?v=e969643949a8"></script>
+<script src="js/e84demo.js?v=422a058ee327"></script>
 <script src="js/event_log.js?v=be298656496b"></script>
 <script src="js/main.js?v=10c866300ff6"></script>
 </body>

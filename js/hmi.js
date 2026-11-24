@@ -708,8 +708,7 @@ let hmiHold = false, hmiPos = null;
   el.addEventListener('change', e => { if (e.target.id === 'hmiLogFilter') { hmiLogFilter = e.target.value; eventPage=0; e.target.blur(); renderHmi(); } if (e.target.id === 'hmiFoup' && hmiV) { hmiV.homeFoup = e.target.value; hmiMsg(e.target.value ? `歸原點設定：${e.target.value === 'yes' ? '有' : '無'} FOUP` : ''); e.target.blur(); renderHmi(); } if (e.target.id === 'hmiSel') { if (hmiV && hmiV.detailMove) detailStop(hmiV, '切換車輛，動作停止'); eventPage=0; hmiV = vehicles.find(u => u.id === e.target.value); hmiInit(hmiV); hmiMsgText = ''; e.target.blur(); renderHmi(); } });
 }
 // E84 訊號燈：天車送出的、機台送來的（教學用，照目前的取放步驟推算）
-// 現場做法：機台在天車到站前就把 READY 打開——Port 在 Auto、可以收貨（Port 空的）或可以出貨（貨做完了）時就亮
-//   （SEMI E84 標準是收到天車的 TR_REQ 之後才打開 READY；這裡照現場看到的燈號做）
+// Port 現在能不能收貨／出貨（Load Port 在 Auto、HO_AVBL ON，而且 Port 空的或貨做完了）；READY 燈本身只在交握時亮
 function portReadyLamp(p, op) {
   if (!p || !(p.owner.type === 'machine' || p.owner.type === 'ntb') || !hoAvbl(p)) return 0;
   const busy = f => ['docking', 'processing', 'undocking'].includes(f.state);   // 對接、加工、退出中都不能取
@@ -720,7 +719,7 @@ function portReadyLamp(p, op) {
 function e84Signals(v) {
   const p = transferPort(v), atMachine = p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && (v.state === 'e84' || TRANSFERRING.includes(v.state));
   const S = { VALID: 0, CS_0: 0, TR_REQ: 0, BUSY: 0, COMPT: 0, L_REQ: 0, U_REQ: 0, READY: 0, HO_AVBL: p && (p.owner.type === 'machine' || p.owner.type === 'ntb') ? +hoAvbl(p) : 0, ES: 1 };
-  S.READY = p ? portReadyLamp(p, v.state === 'toPick' || v.op === 'pick' ? 'pick' : 'drop') : 0;   // 天車還沒來，READY 就可能已經亮著
+  // READY 照 SEMI E84：交握時收到天車的 TR_REQ 才打開（待命時機台端只亮 HO_AVBL、ES、PWR）
   if (!atMachine) return { S, p: atMachine ? p : null };
   const st = v.state, req = v.op === 'pick' ? 'U_REQ' : 'L_REQ', k = v.state === 'e84' ? Math.floor(v.timer / E84_TIME * 4) : 9;
   if (st === 'guardClose') { S.READY = 0; return { S, p }; }                          // 交握已經結束（VALID、COMPT、CS_0 都關了），天車只是在放下防墜板
@@ -736,7 +735,7 @@ function e84Panel(v) {
   const { S, p } = e84Signals(v), lamp = (n, on, bad) => `<span class="e84l ${on ? 'on' : ''} ${bad ? 'bad' : ''}">${n}</span>`;
   if (!p) return `<h5>E84 訊號</h5><div class="mut">不在機台 Load Port 取放貨（STB 儲格不用交握）</div>`;
   return `<h5>E84 訊號（${p.name}）</h5><div class="e84g"><b>天車→機台</b>${['VALID', 'CS_0', 'TR_REQ', 'BUSY', 'COMPT'].map(n => lamp(n, S[n])).join('')}</div>
-    <div class="e84g"><b>機台→天車</b>${lamp('電源', true)}${lamp('HO_AVBL', S.HO_AVBL, !S.HO_AVBL)}${lamp('READY', S.READY)}${lamp('L_REQ', S.L_REQ)}${lamp('U_REQ', S.U_REQ)}${lamp('ES', false, !S.ES)}</div>`;   // ES 燈：平常暗，急停時才亮紅（訊號本身是 ON＝正常）
+    <div class="e84g"><b>機台→天車</b>${lamp('PWR', true)}${lamp('HO_AVBL', S.HO_AVBL, !S.HO_AVBL)}${lamp('READY', S.READY)}${lamp('L_REQ', S.L_REQ)}${lamp('U_REQ', S.U_REQ)}${lamp('ES', S.ES, !S.ES)}</div>`;   // ES：訊號 ON＝沒有急停，燈平常就亮；急停時熄滅
 }
 function recoveryBox(v, a) {
   if (!a) return `<div class="hbox rec"><h5>異常排除步驟</h5><p class="mut">這台車目前沒有異常。<br>想練習的話：按 EMERGENCY STOP，或在面板觸發「天車故障停車」「取放貨異常」，再回來這裡排除。</p></div>`;

@@ -4,23 +4,23 @@
 
 // 兩端 PIO 各 8 個送出（OUT）通道；天車的 OUT 就是機台的 IN，反之亦然。通道順序依 E84 訊號表，實際接腳依廠牌設備為準
 const E84_DEMO_SIG = {
-  active: [['VALID', '這次交握有效（天車要開始了）'], ['CS_0', '選擇 Load Port（第 1 組）'], ['CS_1', '選擇 Load Port（第 2 組）'], ['AM_AVBL', '天車可以交握（多用在 AGV）'],
+  active: [['VALID', '這次交握有效（天車要開始了）'], ['CS_0', '選擇 Load Port（第 1 組）'], ['CS_1', '選擇載台 1（OHT 一般只用 CS_0）'], ['AM_AVBL', '天車可以交握（多用在 AGV）'],
     ['TR_REQ', '請求搬送'], ['BUSY', '天車正在取放（機台不可動作）'], ['COMPT', '搬送完成'], ['CONT', '連續搬送（同一次交握接著做下一筆）']],
-  passive: [['L_REQ', '可以放貨（Port 是空的）'], ['U_REQ', '可以取貨（貨在 Port 上）'], ['VA', '（保留／部分機台用）'], ['READY', '機台準備好，天車可以動作'],
-    ['VS_0', '（保留／部分機台用）'], ['VS_1', '（保留／部分機台用）'], ['HO_AVBL', '可以交握（機台正常、光閘沒被擋）'], ['ES', '緊急停止：燈平常暗，急停時才亮紅（訊號本身 ON＝正常）']],
+  passive: [['L_REQ', '可以放貨（Port 是空的）'], ['U_REQ', '可以取貨（貨在 Port 上）'], ['VA', '天車到站（多用在 AGV，OHT 不用）'], ['READY', '機台準備好，天車可以動作'],
+    ['VS_0', '被動端車輛的載台 0（OHT 不用）'], ['VS_1', '被動端車輛的載台 1（OHT 不用）'], ['HO_AVBL', '可以交握（機台正常、光閘沒被擋）'], ['ES', '緊急停止：訊號 ON＝沒有急停，所以平常是亮的；EMO、門互鎖時熄滅']],
 };
 const E84_DEMO_USED = new Set(['VALID', 'CS_0', 'TR_REQ', 'BUSY', 'COMPT', 'L_REQ', 'U_REQ', 'READY', 'HO_AVBL', 'ES']);
 const E84_DEMO_STEPS = [
-  ['天車前往機台 Load Port', '天車接到搬運命令，正開往機台的 Load Port。開始交握前，機台端要先準備好：Load Port 在 Auto 模式、通訊器有電，HO_AVBL 和 READY 都已經亮著（Port 可以收貨／出貨）；ES 燈是暗的（沒有急停）。HO_AVBL 或 READY 沒亮，就代表 E84 狀態不對、天車到了也不能取放。'],
+  ['天車前往機台 Load Port', '天車接到搬運命令，正開往機台的 Load Port。開始交握前，機台端通訊器要先是待命的燈號：Load Port 在 Auto 模式時，INPUTS 的 7（HO_AVBL）、8（ES）和 PWR 三顆亮著，其他都暗（READY 也是暗的）。只亮 ES、PWR 代表 Load Port 在 Manual；只亮 PWR 代表 EMO、門或 Robot 互鎖有問題，天車到了也不能取放。'],
   ['確認 HO_AVBL', 'HO_AVBL＝機台告訴天車「現在可以交握」。機台異常或 Load Port 前的光閘被擋到時是 OFF，天車只能等，等到逾時就放棄這次取放。'],
   ['天車：CS_0 ＋ VALID', '天車送出 CS_0（選擇這個 Port）和 VALID（這次交握有效，我要開始了）。'],
   ['機台：L_REQ／U_REQ', '機台回覆：放貨時送 L_REQ（Port 是空的，可以放）；取貨時送 U_REQ（貨在 Port 上，可以取）。'],
   ['天車：TR_REQ', '天車送出 TR_REQ：請求開始搬送。'],
-  ['機台：READY（維持亮著）', '這個廠的機台在天車到站前就已經把 READY 打開；收到 TR_REQ 後 READY 繼續亮著，天車可以開始動作。（SEMI E84 標準的做法是收到 TR_REQ 之後才打開 READY。）'],
+  ['機台：READY', '機台收到 TR_REQ、確認 Load Port 準備好，送出 READY（INPUTS 4 亮起來）：天車可以開始動作。'],
   ['天車：BUSY（取放動作）', '天車送出 BUSY 後開始動作：防墜板收回 → 捲揚下降 → 夾爪放開（放貨）或夾住（取貨）。BUSY 期間機台不能動 Load Port。'],
   ['機台：L_REQ／U_REQ 關', '機台的在席感測器確認 FOUP 已經放上（或已經被取走），把 L_REQ／U_REQ 關掉。天車捲揚上升。'],
   ['天車：BUSY、TR_REQ 關 → COMPT', '捲揚回到原點：天車關掉 BUSY 和 TR_REQ，送出 COMPT（搬送完成）。'],
-  ['機台：READY 關', '機台確認完成，把 READY 關掉。放貨後 Port 上的貨開始加工，READY 會暗到貨做完可以出貨；取貨後 Port 空了，READY 會再亮起來等下一顆貨。'],
+  ['機台：READY 關', '機台收到 COMPT，確認完成，把 READY 關掉。機台端通訊器回到待命燈號（HO_AVBL、ES、PWR）。'],
   ['天車：VALID、COMPT、CS_0 關', '天車關掉 VALID、COMPT、CS_0，這次交握結束。防墜板放下，天車離開去做下一件事。'],
 ];
 // 每一步的模擬速度：交握訊號那幾步很快（實際不到 1 秒），放很慢；取放動作用一般速度
@@ -132,47 +132,43 @@ function e84DemoRender() {
   // 交握結束後天車已經離開（換了任務），燈號停在最後一刻；不然會讀到下一個 Port 的訊號（HO_AVBL 誤顯示 OFF）
   const v = D.v, S = D.done && D.samples.length ? D.samples[D.samples.length - 1].S : v ? e84Signals(v).S : {}, step = Math.max(0, D.step);
   const reqOn = n => (D.op === 'pick' ? n !== 'L_REQ' : n !== 'U_REQ');          // 這次用得到的 REQ
-  // 兩顆 PIO 畫成實體通訊器的樣子：OUT 1～8、IN 1～8 兩排紅色指示燈；天車的 OUT n 就是機台的 IN n
+  // 兩顆 PIO 畫成實際 E84 光通訊器（Optical Transceiver）的面板：黑色方形外殼，左排 OUTPUTS 1～8＋GO、右排 INPUTS 1～8＋PWR，
+  //   燈號亮在編號方框裡（紅點）。接腳照 DB-25 表：機台端 INPUTS 是機台送出的訊號（L_REQ…ES）、OUTPUTS 是收到的天車訊號（VALID…CONT）；
+  //   天車端剛好相反。GO＝兩顆對準、光通訊建立；PWR＝通訊器有電。ES 訊號 ON＝沒有急停，所以平常是亮的
   const used = n => E84_DEMO_USED.has(n) && (n === 'L_REQ' || n === 'U_REQ' ? reqOn(n) : true);
-  const ledOn = n => n === 'ES' ? !!(v && !S.ES) : !!(v && S[n]);          // ES 燈：平常暗、急停時才亮
+  const go = !!(v && !D.done && e84Signals(v).p);                          // 天車停在 Port 上方、兩顆對準
+  const ledOn = n => n === 'GO' ? go : n === 'PWR' ? true : !!(v && S[n]);
   const tipOf = n => ((E84_DEMO_SIG.active.concat(E84_DEMO_SIG.passive).find(x => x[0] === n) || [])[1] || '') + (E84_DEMO_USED.has(n) ? '' : '（這個模擬沒有用到）');
-  // 兩顆 PIO 畫成實體 E84 光通訊器的樣子（黑色方形外殼、四角固定孔、上方收發窗、OUT／IN 兩排紅色 LED、下方線材）
-  //   機台端：LED 區下方 READY／HO／POW 三顆直排；天車端：GO（交握中）／POW。天車的 OUT n 就是機台的 IN n
-  // 兩顆 PIO 畫成直立式 E84 光通訊器：黑色外殼、上方收發窗、面板上 OUT ［ 1～8 ］ IN 兩排紅色 LED、下方固定座和線材
-  //   訊號名稱標在外殼兩側（OUT 在左、IN 在右，跟 LED 同一排）；所有燈號都在這兩排裡
-  const device = (title, outs, ins, three, uid) => {
-    const led = (x, y, on, tip, w = 13, h = 7) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.5" fill="${on ? '#ff3030' : '#3a1212'}" stroke="${on ? '#ffc2c2' : '#4f1a1a'}" stroke-width=".6" ${on ? `filter="url(#gl${uid})"` : ''}><title>${tip}</title></rect>`;
-    const rowY = i => 78 + i * 12.4;
+  const device = (title, outs, ins, isEq, uid) => {
+    const box = (x, y, num, on, tip, w = 15) => `<g><title>${tip}</title><rect x="${x}" y="${y}" width="${w}" height="12" rx="1" fill="#0b0c0e" stroke="#e5e7eb" stroke-width=".9"/>`
+      + (on ? `<circle cx="${x + w / 2}" cy="${y + 6}" r="3.6" fill="#ff2a2a" filter="url(#gl${uid})"/>` : `<text x="${x + w / 2}" y="${y + 9}" class="bn">${num}</text>`) + '</g>';
+    const rowY = i => 48 + i * 16;
     const rows = outs.map(([o], i) => {
       const y = rowY(i), n2 = ins[i][0], oOn = ledOn(o), iOn = ledOn(n2);
-      return `<text x="122" y="${y + 3}" class="pn">${i + 1}</text>${led(92, y - 3.5, oOn, `OUT${i + 1} ${o}：${tipOf(o)}`)}${led(139, y - 3.5, iOn, `IN${i + 1} ${n2}：${tipOf(n2)}`)}
-        <text x="42" y="${y + 3}" class="nm l ${oOn ? 'on' : ''} ${used(o) ? '' : 'un'}"><title>${tipOf(o)}</title>${o}</text>
-        <text x="200" y="${y + 3}" class="nm ${iOn ? 'on' : ''} ${used(n2) ? '' : 'un'}"><title>${tipOf(n2)}</title>${n2}</text>`;
+      return box(97, y, i + 1, oOn, `OUTPUTS ${i + 1}：${o}，${tipOf(o)}`) + box(166, y, i + 1, iOn, `INPUTS ${i + 1}：${n2}，${tipOf(n2)}`)
+        + `<text x="66" y="${y + 9}" class="nm l ${oOn ? 'on' : ''} ${used(o) ? '' : 'un'}"><title>${tipOf(o)}</title>${o}</text>`
+        + `<text x="216" y="${y + 9}" class="nm ${iOn ? 'on' : ''} ${used(n2) ? '' : 'un'}"><title>${tipOf(n2)}</title>${n2}</text>`;
     }).join('');
-    const st = '';                                                         // 燈號都在 OUT／IN 兩排裡，沒有另外獨立的燈
-    const svg = `<svg viewBox="0 0 242 256" class="pio-svg" role="img" aria-label="${title}">
-      <defs><linearGradient id="bg${uid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2c2f34"/><stop offset=".55" stop-color="#1b1d21"/><stop offset=".93" stop-color="#121316"/><stop offset="1" stop-color="#08090a"/></linearGradient>
-        <linearGradient id="fc${uid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#202328"/><stop offset="1" stop-color="#15171a"/></linearGradient>
-        <filter id="gl${uid}" x="-80%" y="-120%" width="260%" height="340%"><feGaussianBlur stdDeviation="1.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-      <rect x="111" y="236" width="20" height="18" fill="#26292e"/><rect x="107" y="230" width="28" height="9" rx="2" fill="#1d2024"/>
-      <rect x="50" y="216" width="144" height="22" rx="6" fill="#141518" stroke="#000"/>
-      <circle cx="64" cy="227" r="5.5" fill="#050506" stroke="#33363c"/><circle cx="180" cy="227" r="5.5" fill="#050506" stroke="#33363c"/>
-      <rect x="48" y="6" width="148" height="214" rx="11" fill="url(#bg${uid})" stroke="#000" stroke-width="1.4"/>
-      <rect x="52" y="8" width="138" height="3" rx="1.5" fill="#fff" opacity=".08"/>
-      <path d="M78 20 h86 q9 0 9 9 v4 q0 9 -9 9 h-86 q-11 0 -11 -9 v-4 q0 -9 11 -9z" fill="#0b0c0e" stroke="#25282d"/>
-      <path d="M118 20 L172 18 L172 34 Z" fill="#000" opacity=".85"/>
-      <rect x="62" y="56" width="124" height="124" rx="11" fill="url(#fc${uid})" stroke="#2a2d33"/>
-      <path d="M160 60 L184 58 L184 176 L150 178 Z" fill="#030304" opacity=".9"/>
-      <g stroke="#e5e7eb" stroke-width="1.2" fill="none"><path d="M80 66 H72 V112"/><path d="M72 130 V172 H80"/><path d="M164 66 H172 V114"/><path d="M172 128 V172 H164"/></g>
-      <text x="72" y="124" class="br">OUT</text><text x="172" y="124" class="br">IN</text>
-      ${rows}
-      ${st}
+    const gy = rowY(8) + 6;
+    const extra = box(97, gy, 'GO', ledOn('GO'), 'GO：兩顆通訊器對準、光通訊建立', 19) + box(164, gy, 'PWR', true, 'PWR：通訊器有電', 21)
+      + `<text x="66" y="${gy + 9}" class="nm l ${go ? 'on' : ''}">GO</text><text x="216" y="${gy + 9}" class="nm on">PWR</text>`;
+    const svg = `<svg viewBox="0 0 282 232" class="pio-svg" role="img" aria-label="${title}">
+      <defs><linearGradient id="bg${uid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a2d32"/><stop offset="1" stop-color="#111214"/></linearGradient>
+        <filter id="gl${uid}" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="1.8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <rect x="74" y="14" width="134" height="208" rx="9" fill="url(#bg${uid})" stroke="#000" stroke-width="1.4"/>
+      ${[[80, 20], [202, 20], [80, 216], [202, 216]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.6" fill="#050506" stroke="#3a3d42"/>`).join('')}
+      <text x="141" y="34" class="ttl">E84 OPTICAL TRANSCEIVER</text>
+      <text x="117" y="112" class="vt" transform="rotate(90 117 112)">OUTPUTS</text>
+      <text x="153" y="112" class="vt" transform="rotate(90 153 112)">INPUTS</text>
+      ${rows}${extra}
     </svg>`;
-    const hint = three ? `<div class="pio-3t">${ledOn('HO_AVBL') && ledOn('READY') ? 'HO_AVBL、READY 都亮：可以取放' : ledOn('HO_AVBL') ? 'HO_AVBL 亮：待命' : 'HO_AVBL 沒亮：E84 狀態不對'}</div>` : '';
+    // 機台端：照現場文件的判讀方式提示（Load Port 空的、在 Online 時）
+    const ho = ledOn('HO_AVBL'), es = ledOn('ES');
+    const hint = isEq ? `<div class="pio-3t">${ho && es ? 'HO_AVBL、ES、PWR 都亮：Auto 模式正常' : es ? '只亮 ES、PWR：Load Port 在 Manual（不是的話：查 LP 安全感測器、連線、線材）' : '只亮 PWR：查 EMO、機台門互鎖、Robot 互鎖'}</div>` : '';
     return `<div class="pio-dev2"><div class="pio-hd">${title}</div>${svg}${hint}</div>`;
   };
   const R = D.op === 'pick' ? 'U_REQ' : 'L_REQ';
-  const ladder = [['r', 'VALID、CS_0 ON', 2], ['l', `${R} ON`, 3], ['r', 'TR_REQ ON', 4], ['l', 'READY（已亮著）', 5], ['r', 'BUSY ON', 6],
+  const ladder = [['r', 'VALID、CS_0 ON', 2], ['l', `${R} ON`, 3], ['r', 'TR_REQ ON', 4], ['l', 'READY ON', 5], ['r', 'BUSY ON', 6],
     ['a', D.op === 'pick' ? '捲揚下降、夾取 FOUP' : '捲揚下降、FOUP 放置', 6], ['l', `${R} OFF`, 7], ['r', 'BUSY、TR_REQ OFF・COMPT ON', 8], ['l', 'READY OFF', 9], ['r', 'VALID、CS_0、COMPT OFF', 10]]
     .map(([d, t, s]) => `<div class="lr ${d} ${s < step || (D.done && step >= 10) ? 'done' : s === step ? 'cur' : ''}"><span>${t}</span>${d === 'a' ? '' : '<b></b>'}</div>`).join('');
   const head = v ? `${v.id} → ${D.port ? D.port.name : '—'}（${D.op === 'pick' ? '取貨' : '放貨'}）` : '尋找天車中…';
@@ -181,12 +177,12 @@ function e84DemoRender() {
       <span class="sp">${D.done ? '' : `模擬速度 ${speed}x`}</span>
       <button data-e84d="again">換一台再看</button><button data-e84d="close">✕ 結束</button></div>
     <div class="bd">
-      <div class="col">${device('天車端 PIO（主動端）', E84_DEMO_SIG.active, E84_DEMO_SIG.passive, false, 'a')}</div>
-      <div class="col">${device('機台端 PIO（被動端）', E84_DEMO_SIG.passive, E84_DEMO_SIG.active, true, 'p')}</div>
+      <div class="col">${device('天車端（主動端 Active）', E84_DEMO_SIG.passive, E84_DEMO_SIG.active, false, 'a')}</div>
+      <div class="col">${device('機台端（被動端 Passive）', E84_DEMO_SIG.active, E84_DEMO_SIG.passive, true, 'p')}</div>
       <div class="col wide">
         <div class="now"><b>${D.done && step >= 10 ? '✔ 交握完成' : step === 1 ? `等待：${title}` : `第 ${step === 0 ? 1 : step} 步：${title}`}</b><p>${D.note || text}</p></div>
         <canvas width="460" height="150"></canvas>
-        <div class="mut pn">兩顆 PIO 用紅外光對射，各有 8 個送出（OUT）和 8 個接收（IN）：天車的 OUT n 就是機台的 IN n，反之亦然。紅燈亮＝訊號 ON（ES 燈例外：急停時才亮）；灰字的通道這個模擬沒有用到，實際接腳依廠牌設備為準。</div>
+        <div class="mut pn">兩顆通訊器用紅外光對射。機台端：INPUTS 是機台自己送出的訊號、OUTPUTS 是收到的天車訊號；天車端剛好相反。方框裡紅點亮＝訊號 ON（ES 平常就亮）；GO＝兩顆對準、PWR＝有電。灰字的通道 OHT 用不到。</div>
       </div>
       <div class="steps ladder"><div class="lh"><span>OHT 天車</span><span>Load Port</span></div>${ladder}</div>
     </div>`;
@@ -245,7 +241,7 @@ function pioVisuals(t) {
   const blink = 0.5 + 0.5 * Math.sin(t * 16);
   for (const p of ports) if (p.pioLed) {
     const ok = hoAvbl(p); setLed(p.pioLed, ok ? C.green : C.red, ok ? 0.55 : 0.3 + 1.2 * blink);
-    if (p.pio3) { setLed(p.pio3[0], C.red, 1.3); setLed(p.pio3[1], C.red, ok ? 1.3 : 0); setLed(p.pio3[2], C.red, portReadyLamp(p) ? 1.3 : 0); }   // READY：Port 可以收／出貨時就亮（現場做法）
+    if (p.pio3) { setLed(p.pio3[0], C.red, 1.3); setLed(p.pio3[1], C.red, ok ? 1.3 : 0); setLed(p.pio3[2], C.red, 0); }   // READY：交握時收到 TR_REQ 才亮（下面天車迴圈設定）
   }
   let n = 0;
   for (const v of vehicles) {

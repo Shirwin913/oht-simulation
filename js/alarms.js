@@ -166,7 +166,7 @@ const E204_INFO = { code: 'E-204', title: '取放貨中斷：HO_AVBL OFF（光�
   steps: ['確認原因：光閘區域有沒有人員、物品擋住，或是機台故障', '機台／Load Port 故障是設備問題：通知設備工程師到現場，Load Port 由設備工程師賦歸', 'CIM 不用等 HO 恢復，直接賦歸天車：警報清除 → 選有／無貨賦歸 → 捲揚、側移回原點 → 歸原點 → 切上線', '切上線後天車重新做 E84 交握；HO 還沒恢復就逾時，貨回原儲位'] };
 let pendingCurtain = false;
 const transferPort = v => v.job ? (v.op === 'pick' ? v.job.from : v.job.to) : null;
-const hoAvbl = p => !!p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && !p.owner.down && !(p.curtain > simTime) && !(p.hoOff > simTime) && (p.owner.type !== 'machine' || ((p.dock || 0) <= .001 && !(p.foup && p.foup.doorOpen > .001))) && (p.owner.type !== 'ntb' || p.gate <= 0.001);   // 機台給的 HO_AVBL
+const hoAvbl = p => !!p && (p.owner.type === 'machine' || p.owner.type === 'ntb') && !p.owner.down && p.lpMode !== 'manual' && !(p.curtain > simTime) && !(p.hoOff > simTime) && (p.owner.type !== 'machine' || ((p.dock || 0) <= .001 && !(p.foup && p.foup.doorOpen > .001))) && (p.owner.type !== 'ntb' || p.gate <= 0.001);   // 機台給的 HO_AVBL
 // 光閘遮斷：stepTransfer 在天車開始下降時呼叫（pendingCurtain），或手動觸發時直接找正在取放的車
 function raiseCurtain(v, opts = {}) {
   if (!v) {

@@ -428,7 +428,7 @@ function routeDist(a, b) {
 }
 const nearest = (from, list) => { const r = list.reduce((best, q) => { const d = routeDist(from, q); return d < Infinity && (!best || d < best.d) ? { q, d } : best; }, null); return r && r.q; };
 // Port 現在能不能用：機台沒當機、所在軌道沒封鎖
-const usable = q => !q.owner.down && !q.seg.blocked;
+const usable = q => !q.owner.down && !q.seg.blocked && q.lpMode !== 'manual';   // Load Port 切 Manual：不派車過去
 const MAX_NEW_JOBS = 40;   // 每一輪最多產生幾筆新任務（地圖大時避免一次算太多）
 const NEXT_TOOL_POOL = 12; // 機台下貨送下一台機台時，從最近的幾台空機台裡挑
 const CROSS_ZONE = 0.25;   // 機台下貨送到「任何地方」的機台的機率（多半會跨區塊）

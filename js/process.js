@@ -53,7 +53,8 @@ function updateProcessUI() {
   if (!sel || !info) return;
   const p=ports.find(p=>p.id===Number(sel.value)); if(!p) return;
   const f=p.foup;
-  info.textContent = `${p.name}：${f ? (p.processStage || (f.state==='ready'?'待取貨':f.state)) : '空閒'} · 台面前移 ${Math.round((p.dock||0)*DOCK_DISTANCE*1000)} mm` +
+  const mb=document.getElementById('processMode'); if (mb) { mb.textContent = p.lpMode==='manual' ? 'Manual → 切 Auto' : 'Auto → 切 Manual'; mb.className = p.lpMode==='manual' ? 'warn' : ''; }
+  info.textContent = `${p.name}（${p.lpMode==='manual'?'Manual：E84 只亮 ES、PWR，天車不能取放':'Auto'}）：${f ? (p.processStage || (f.state==='ready'?'待取貨':f.state)) : '空閒'} · 台面前移 ${Math.round((p.dock||0)*DOCK_DISTANCE*1000)} mm` +
     (f ? ` · ${f.id} · 盒內 ${f.empty?0:(f.waferCount??25)}／25 片${!f.empty && (f.waferCount??25)<25 ? '（其餘在機台內）':''}` : '');
 }
 {
@@ -67,4 +68,11 @@ function updateProcessUI() {
     camera.position.set(p.x-dx*2.0-dz*1.7,2.15,p.z-dz*2.0+dx*1.7);
   };
   sel.onchange=updateProcessUI;
+  // Load Port 模式：Manual 時 HO_AVBL 關掉（機台端 E84 只剩 ES、PWR 亮），派車系統不會派車過來；取放到一半切 Manual 會報 E-204
+  document.getElementById('processMode').onclick=()=>{
+    const p=ports.find(p=>p.id===Number(sel.value)); if(!p) return;
+    p.lpMode = p.lpMode==='manual' ? 'auto' : 'manual';
+    log(`🔧 ${p.name} Load Port 切成 ${p.lpMode==='manual'?'Manual（HO_AVBL OFF，不收送貨）':'Auto（HO_AVBL ON）'}`);
+    updateProcessUI();
+  };
 }

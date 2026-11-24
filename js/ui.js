@@ -217,9 +217,12 @@ const INFO_CARDS = {
     模擬裡 Load Port 端那顆平常亮綠燈（HO_AVBL ON），交握時兩顆一起閃青色、中間有一道光束，訊號每變一次就亮一下。
     停不準、被擋到或鏡面髒了會收不到訊號，就是現場常見的交握逾時原因之一。</p>
     <h4>流程（簡化）</h4><ol><li>前提：機台送出 HO_AVBL（可以交握）＝ON，代表機台正常、Load Port 前面的光閘沒被擋到</li><li>天車：CS_0（選哪個 Port）＋ VALID（我要開始了）</li><li>機台：L_REQ（可以放）／U_REQ（可以取）</li>
-    <li>天車：TR_REQ（請求搬運）</li><li>機台：READY（現場在天車到站前就已經亮著）→ 天車：BUSY（開始下降、取放）</li><li>取放完、捲揚升上來：天車 BUSY 關、COMPT（完成）</li><li>機台 READY 關 → 天車 VALID、COMPT 關，交握結束</li></ol>
-    <h4>現場指示燈怎麼看</h4><p>自動取放時，機台端通訊器的<b>電源燈</b>和 <b>HO_AVBL</b> 燈要亮著；<b>READY</b> 在天車到站前就亮著（Port 可以收貨或出貨時就亮；SEMI E84 標準是收到天車的 TR_REQ 才打開，這裡照現場的做法）。
-    <b>ES</b> 燈平常是暗的，亮起來代表急停。（E84 的 ES 訊號本身是 ON＝正常；指示燈畫成「急停時才亮」，跟現場看到的一致。實際以各設備標示為準。）</p>
+    <li>天車：TR_REQ（請求搬運）</li><li>機台：READY（收到 TR_REQ、Load Port 準備好才亮）→ 天車：BUSY（開始下降、取放）</li><li>取放完、捲揚升上來：天車 BUSY 關、COMPT（完成）</li><li>機台 READY 關 → 天車 VALID、COMPT 關，交握結束</li></ol>
+    <h4>現場指示燈怎麼看（機台端通訊器）</h4><p>通訊器面板左排是 <b>OUTPUTS 1～8＋GO</b>（收到的天車訊號），右排是 <b>INPUTS 1～8＋PWR</b>（機台送出的訊號：1 L_REQ、2 U_REQ、3 VA、4 READY、5 VS_0、6 VS_1、7 HO_AVBL、8 ES）。
+    裝好、Load Port 空的、機台 Online 時：<b>Auto 模式</b>亮 INPUTS 7（HO_AVBL）、8（ES）和 PWR，右下角三顆直排；<b>Manual 模式</b>只亮 ES 和 PWR。READY 平常是暗的，交握收到 TR_REQ 才亮。
+    ES 訊號 ON＝沒有急停，所以平常是亮的。</p>
+    <p>燈號不對時：<b>只亮 PWR</b> → 查 EMO 訊號、機台門的互鎖、Robot 的互鎖；<b>不論 Auto 或 Manual 都只亮 PWR 和 ES</b> → 查 Load Port 上的安全感測器、Load Port 操控軟體和機台電腦的連線、有沒有線材鬆脫。
+    模擬裡可以在「總覽 → Load Port 對接與晶圓」把某個 Load Port 切成 Manual 看燈號變化。</p>
     <h4>光閘和 HO_AVBL</h4><p>Load Port 靠走道那一側有兩根光閘柱（頂端橘色），柱子上有指示燈條：平常是<b>綠色</b>，被擋到時變<b>紅色</b>，中間有看不見的光束。取放貨過程中只要有東西擋到光閘，或機台異常，
     機台的 HO_AVBL 就會變 OFF，天車立刻停止捲揚、這次取放貨失敗（E-204），要人員確認淨空、機台復歸後，再用操作介面復歸，天車會重新交握再做一次。
     「異常」分頁的「光閘遮斷（E84 中斷）」可以示範：光束會變紅閃，操作介面主畫面的 E84 訊號燈 HO_AVBL 會變紅。</p>

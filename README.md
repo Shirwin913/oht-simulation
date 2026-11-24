@@ -366,3 +366,9 @@ NTB01 配 M01（投貨進系統）、M02（從系統取貨）；NTB02 配 M03、
 ## 人員視角（js/walk.js）
 面板上方「🚶 人員視角」：站在地上、眼睛高度 1.65 m 看天車在頭上跑。W/A/S/D 或方向鍵走路、Shift 快走、按住滑鼠左鍵拖曳轉頭／抬頭、滾輪往前後一步、Esc 或再按一次按鈕回到俯瞰。
 不能穿過機台和 NTB（會沿著邊緣滑過去），也走不出地板。進入時會顯示白色天花板和燈具（俯瞰時隱藏）；A 區（有微影 LITHO 機台）是黃光區：燈具是黃光、天花板偏黃，區內再加六盞黃色燈光，機台和地面會染上黃光。點到天車會回到俯瞰並跟隨那台車。
+
+## E84 照現場文件修正
+- READY 照 SEMI E84：交握收到 TR_REQ 才亮、COMPT 後關；待命時機台端只亮 HO_AVBL、ES、PWR。
+- ES：訊號 ON＝沒有急停，燈平常是亮的。
+- E84 交握動畫的兩顆通訊器改成實際面板：左排 OUTPUTS 1～8＋GO、右排 INPUTS 1～8＋PWR。機台端 INPUTS＝L_REQ、U_REQ、VA、READY、VS_0、VS_1、HO_AVBL、ES；OUTPUTS＝VALID、CS_0、CS_1、AM_AVBL、TR_REQ、BUSY、COMPT、CONT（天車端相反）。GO＝兩顆對準、PWR＝有電。機台端下方有燈號判讀提示。
+- Load Port Auto／Manual：「總覽 → Load Port 對接與晶圓」可以切。Manual 時 HO_AVBL OFF（只亮 ES、PWR），派車系統不派車過去；取放到一半切 Manual 會報 E-204。
