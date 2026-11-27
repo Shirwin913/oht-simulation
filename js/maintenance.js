@@ -44,8 +44,8 @@ function buildLifter(LI) {
   // 會動的部分：一小段軌道＋吊架（跟著天車一起升降），四條吊鏈
   const carrier = new THREE.Group(); g.add(carrier);
   const L = 2 * LIFT_HALF + 0.04;
-  [[new THREE.BoxGeometry(L, 0.03, 0.62), 0.135, 0], [new THREE.BoxGeometry(L, 0.3, 0.03), 0, 0.295], [new THREE.BoxGeometry(L, 0.3, 0.03), 0, -0.295],
-   [new THREE.BoxGeometry(L, 0.03, 0.17), -0.135, 0.195], [new THREE.BoxGeometry(L, 0.03, 0.17), -0.135, -0.195]]
+  [[new THREE.BoxGeometry(L, 0.018, 0.62), 0.293, 0], [new THREE.BoxGeometry(L, 0.452, 0.023), 0.076, 0.2985], [new THREE.BoxGeometry(L, 0.452, 0.023), 0.076, -0.2985],   // 斷面跟 track.js 直軌一樣（縫 ±0.174）
+   [new THREE.BoxGeometry(L, 0.03, 0.113), -0.135, 0.2305], [new THREE.BoxGeometry(L, 0.03, 0.113), -0.135, -0.2305]]
     .forEach(([geo, y, z]) => { const m = new THREE.Mesh(geo, railMat); m.position.set(0, y, z); m.castShadow = true; carrier.add(m); });
   const frameMat = mat(YEL, { metalness: 0.4 });
   [0.9, -0.9].forEach(x => { const m = box(0.14, 0.12, 1.5, frameMat); m.position.set(x, 0.25, 0); carrier.add(m); });

@@ -165,46 +165,35 @@ function setLpDoor(p, open) {
 // ---------- 軌道：接頭、分岔／合流段槽內的彎軌、合流前的三角凸塊 ----------
 {
   const joints = [];
-  segs.forEach(sg => { for (let s = 1.5; s < sg.len - 0.2; s += 3) { if (onLifter(sg, s, LIFT_HALF + 0.6)) continue; const f = frameAt(sg, s); if (!joints.some(j => Math.hypot(j.x - f.x, j.z - f.z) < 1.2)) joints.push(f); } });   // 兩段軌道疊在一起的地方不要重複放
-  const jGeo = new THREE.BoxGeometry(0.035, 0.34, 0.665), jMat = mat(0x9aa4ad, { metalness: 0.6, roughness: 0.35 });
-  const jim = new THREE.InstancedMesh(jGeo, jMat, joints.length), o3 = new THREE.Object3D();
-  joints.forEach((f, i) => { o3.position.set(f.x, H, f.z); o3.rotation.set(0, f.th, 0); o3.updateMatrix(); jim.setMatrixAt(i, o3.matrix); });
+  // 接板只在直軌（鋁擠型一段一段接起來）；彎道、分岔、匯流是一整片板件，沒有接板。
+  // 接板貼在軌道兩側外面，不能橫穿過槽底的縫（不然從下面看會有一片板子卡在縫裡）
+  segs.forEach(sg => { for (let s = 1.5; s < sg.len - 0.2; s += 3) { if (onLifter(sg, s, LIFT_HALF + 0.6) || sg.curveAt(s) || inJunctionRun(sg, s - .4) || inJunctionRun(sg, s + .4)) continue; const f = frameAt(sg, s); if (!joints.some(j => Math.hypot(j.x - f.x, j.z - f.z) < 1.2)) joints.push(f); } });   // 兩段軌道疊在一起的地方不要重複放
+  const jGeo = new THREE.BoxGeometry(0.035, 0.452, 0.012), jMat = mat(0x9aa4ad, { metalness: 0.6, roughness: 0.35 });
+  const jim = new THREE.InstancedMesh(jGeo, jMat, joints.length * 2), o3 = new THREE.Object3D();
+  joints.forEach((f, i) => [-1, 1].forEach((sd, k) => { o3.position.set(f.x + sd * .316 * f.nx, H + .076, f.z + sd * .316 * f.nz); o3.rotation.set(0, f.th, 0); o3.updateMatrix(); jim.setMatrixAt(i * 2 + k, o3.matrix); }));
   jim.castShadow = true; jim.frustumCulled = false; scene.add(jim);
 
   // 彎軌：分岔點前 1.5 m 開始，沿支線 3.5 m；合流點前 3.5 m 沿支線到合流點後 0.5 m。偏支線那一側（槽頂往下凸）
-  const GUIDE_Y = H + 0.075, GUIDE_OFF = 0.14, STEP = 0.25;
-  const gGeo = new THREE.BoxGeometry(STEP * 1.08, 0.09, 0.025), guideMats = [], wedges = [];
-  const strip = (sg, d0, d1, sd) => {
-    for (let s = Math.max(0, d0); s < Math.min(sg.len, d1); s += STEP) {
-      const f = frameAt(sg, s + STEP / 2);
-      guideMats.push(new THREE.Matrix4().compose(new THREE.Vector3(f.x + sd * GUIDE_OFF * f.nx, GUIDE_Y, f.z + sd * GUIDE_OFF * f.nz),
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(0, f.th, 0)), new THREE.Vector3(1, 1, 1)));
-    }
-  };
-  nodes.forEach(n => {
-    if (n.out.length > 1) {                                                // 分岔
-      const main = n.def, branches = n.out.filter(s => s !== main);
-      branches.forEach(br => {
-        const inc = n.in[0];
-        const fM = frameAt(main, 0), [bx, bz] = br.at(Math.min(br.len, 2.5));
-        const sd = Math.sign((bx - fM.x) * fM.nx + (bz - fM.z) * fM.nz) || 1;
-        if (inc) strip(inc, inc.len - 1.5, inc.len, sd);
-        strip(br, 0, 3.5, sd);
-      });
-    }
-    if (n.in.length > 1) {                                                 // 合流
-      const out = n.out[0]; if (!out) return;
-      n.in.forEach(br => {
-        if (br.kind === 'main') return;                                    // 主線來車不用導引
-        const fO = frameAt(out, 0), [bx, bz] = br.at(Math.max(0, br.len - 2.5));
-        const sd = Math.sign((bx - fO.x) * fO.nx + (bz - fO.z) * fO.nz) || 1;
-        strip(br, br.len - 3.5, br.len, sd); strip(out, 0, 0.5, sd);
-        wedges.push({ sg: br, d: br.len - 3.9 });
-      });
-    }
-  });
-  const gim = new THREE.InstancedMesh(gGeo, mat(0xc9a227, { metalness: 0.55, roughness: 0.35 }), Math.max(1, guideMats.length));
-  guideMats.forEach((m4, i) => gim.setMatrixAt(i, m4)); gim.frustumCulled = false; scene.add(gim);
+  const wedges=[];const guidePos=[],guideNorm=[];
+  // A paired straight/curved assembly on the same ceiling, only around each junction.
+  function guideStrip(sg,a,b,sd,curved){
+    a=Math.max(0,a);b=Math.min(sg.len,b);if(b<=a)return;
+    const width=curved?.045*.52:.018*.52,outer=curved?.302*.52:.266*.52;
+    const bottom=H+(curved?.54:.67)*.52-.122,top=H+OHT_TRAVEL.railInside;
+    const pos=[];const ring=d=>{const f=frameAt(sg,d);return [[outer-width,top],[outer,top],[outer,bottom],[outer-width,bottom]].map(([x,y])=>[f.x+sd*x*f.nx,y,f.z+sd*x*f.nz]);};
+    const n=Math.max(1,Math.ceil((b-a)/.04));let prev=ring(a);
+    for(let i=1;i<=n;i++){const next=ring(a+(b-a)*i/n);for(let k=0;k<4;k++){const j=(k+1)%4;pos.push(...prev[k],...next[j],...prev[j],...prev[k],...next[k],...next[j]);}prev=next;}
+    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.computeVertexNormals();guidePos.push(...geo.attributes.position.array);guideNorm.push(...geo.attributes.normal.array);geo.dispose();
+  }
+  nodes.forEach(n=>{if(n.out.length>1){const main=n.def;
+    n.out.filter(br=>br!==main).forEach(br=>{const f=frameAt(main,0),[bx,bz]=br.at(Math.min(br.len,2.5)),sd=Math.sign((bx-f.x)*f.nx+(bz-f.z)*f.nz)||1;
+      const inc=n.in[0];if(inc){guideStrip(inc,inc.len-OHT_TRAVEL.guideStart,inc.len,sd,false);guideStrip(inc,inc.len-OHT_TRAVEL.guideStart,inc.len,sd,true);}
+      guideStrip(main,0,OHT_TRAVEL.guideLength,sd,false);guideStrip(br,0,OHT_TRAVEL.guideLength,sd,true);
+    });
+  }});
+  nodes.forEach(n=>{if(n.in.length>1)n.in.filter(br=>br.kind!=='main').forEach(br=>wedges.push({sg:br,d:br.len-3.9}));});
+  const guideGeo=new THREE.BufferGeometry();guideGeo.setAttribute('position',new THREE.Float32BufferAttribute(guidePos,3));guideGeo.setAttribute('normal',new THREE.Float32BufferAttribute(guideNorm,3));
+  const guideMesh=new THREE.Mesh(guideGeo,mat(0xb4bec6,{metalness:.5,roughness:.5,side:THREE.DoubleSide}));scene.add(guideMesh);
   // 三角凸塊：在支線槽內，尖角朝來車；把上手（兩導輪併在中間）撐開成下手
   const tri = new THREE.Shape(); tri.moveTo(-0.22, 0); tri.lineTo(0.22, 0.13); tri.lineTo(0.22, -0.13); tri.closePath();
   const wGeo = new THREE.ExtrudeGeometry(tri, { depth: 0.07, bevelEnabled: false }); wGeo.rotateX(Math.PI / 2); wGeo.translate(0, 0.035, 0);

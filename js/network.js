@@ -194,7 +194,7 @@ function manualForwardRoom(v) {
   let room = v.seg.len - v.d, seg = v.seg;
   while (room < LOOK) {
     const next = manualNext(seg, v);
-    if (!next || next.blocked) return Math.max(0, room - BOGIE_X - 0.05);
+    if (!next || next.blocked) return Math.max(0, room - BOGIE_X - OHT_TRAVEL.guideStart - OHT_TRAVEL.guideMargin);
     seg = next; room += seg.len;
   }
   return Infinity;

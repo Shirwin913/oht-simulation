@@ -87,7 +87,7 @@ function setShowComm(on) { showComm = on; $('showComm').checked = on; }
 $('showComm').onchange = e => setShowComm(e.target.checked);
 $('btnCommInfo').onclick = () => openInfoGroup('net', COMM_MODE === 'mesh' ? 'mesh' : 'comm');   // 依目前的通訊方式先開對應的分頁
 $('btnE84Info').onclick = () => openInfoCard('e84');
-$('btnHandDemo').onclick = () => openHandDemo();
+$('btnTravel3D').onclick = () => openHandDemo(1);   // 直接打開教學視窗的「1. 認識走行機構」（3D）
 $('apCap').oninput = e => { AP_CAP = +e.target.value; $('apCapVal').textContent = AP_CAP + ' 台'; };
 $('gwCap').oninput = e => { GW_CAP = +e.target.value; $('gwCapVal').textContent = GW_CAP + ' 台'; };
 $('relayCap').oninput = e => { RELAY_CAP = +e.target.value; $('relayCapVal').textContent = RELAY_CAP + ' 台'; };
@@ -135,7 +135,7 @@ $('hoistSpd').oninput = e => { HS = +e.target.value; $('hoistVal').textContent =
 $('vmax').oninput = e => { VMAX = +e.target.value; $('vmaxVal').textContent = VMAX; };
 $('xray').onchange = e => {           // 透視模式：軌道與車殼半透明，看得到走行部、捲揚、側移機構
   xray = e.target.checked;
-  [railMat, VG.white, VG.offWhite, ...vehicles.map(v => v.topMat)].forEach(m => setXrayMat(m, xray));
+  [...TRACK_XRAY_MATERIALS, VG.white, VG.offWhite, ...vehicles.map(v => v.topMat)].forEach(m => setXrayMat(m, xray));
   vehicles.forEach(setHiddenParts);
 };
 $('showLabels').onchange = e => { showLabels = e.target.checked; labels.forEach(l => l.visible = showLabels); };

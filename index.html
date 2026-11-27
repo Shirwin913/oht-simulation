@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OHT 天車 3D 模擬</title>
-<link rel="stylesheet" href="css/style.css?v=eb546397ea9b">
+<link rel="stylesheet" href="css/style.css?v=0e552d5282c8">
 </head>
 <body>
 <div id="app"></div>
@@ -119,7 +119,7 @@
       <button id="btnDispatchInfo">派工與派車</button><button id="btnPriInfo">路權與空車</button>
       <button id="btnDirectInfo">直送與 Q-time</button><button id="btnCommInfo">無線 AP／Mesh</button>
       <button id="btnE84Info">E84 交握＋動畫</button><button id="btnMaintInfo">維修區捲揚機</button>
-      <button id="btnHandDemo" class="span2">▶ 看軌道：上手／下手</button>
+      <button id="btnTravel3D" class="span2">▶ 走行與分岔 3D 示範</button>
     </div>
     <div class="sec">天車狀態燈（前後燈帶）</div>
     <div class="legend">
@@ -159,27 +159,29 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="js/rng.js?v=fc291fc18429"></script>
 <script src="js/vehicle_model.js?v=dd110a72b6d9"></script>
-<script src="js/config.js?v=2fee3a83efe8"></script>
-<script src="js/network.js?v=bae305415968"></script>
+<script src="js/config.js?v=52d5d501e3d9"></script>
+<script src="js/network.js?v=b89ab74a8b50"></script>
 <script src="js/scene.js?v=e3bc7778ec95"></script>
-<script src="js/track.js?v=0446ea28f8ab"></script>
+<script src="js/travel_mechanism.js?v=b6aedde278ea"></script>
+<script src="js/track.js?v=e8197845edec"></script>
 <script src="js/factory.js?v=7a01c90bbe30"></script>
-<script src="js/detail.js?v=11e50385e0ca"></script>
-<script src="js/foup.js?v=ac36d80eaa47"></script>
+<script src="js/detail.js?v=0655cfe4e8b0"></script>
+<script src="js/foup.js?v=8c154eb87d84"></script>
 <script src="js/process.js?v=3987f63d4cbb"></script>
-<script src="js/vehicle.js?v=c49ade8c7900"></script>
-<script src="js/simulation.js?v=c2c531dce731"></script>
+<script src="js/vehicle.js?v=342be0417364"></script>
+<script src="js/simulation.js?v=c919f52fd3d4"></script>
 <script src="js/alarms.js?v=ae1d4660d22b"></script>
-<script src="js/maintenance.js?v=31ce8a600fc1"></script>
+<script src="js/maintenance.js?v=61ffb9e99f4a"></script>
 <script src="js/comm.js?v=b1428c1154c6"></script>
 <script src="js/hmi.js?v=8b532959dd6b"></script>
 <script src="js/hmi_detail.js?v=2b58d7401742"></script>
 <script src="js/ntb.js?v=da18e0f7c5fd"></script>
-<script src="js/ui.js?v=e5138f7971d3"></script>
+<script src="js/ui.js?v=eefb3cb3542b"></script>
 <script src="js/walk.js?v=d859ed257565"></script>
 <script src="js/tour.js?v=b95e43435dd5"></script>
 <script src="js/bench.js?v=db960b3cc62b"></script>
-<script src="js/handdemo.js?v=69e260ca3559"></script>
+<script src="js/handdemo.js?v=2b644d0701b5"></script>
+<script src="js/traveldemo.js?v=a6895a94bd9c"></script>
 <script src="js/e84demo.js?v=422a058ee327"></script>
 <script src="js/event_log.js?v=be298656496b"></script>
 <script src="js/main.js?v=c9171612e0e6"></script>

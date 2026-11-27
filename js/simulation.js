@@ -89,13 +89,13 @@ function handCheck(v, pa, dt) {
   if (!v.handSw) {
     const [fc, rc] = bogieInCurve(v, pa);
     v.handWait = v.v < 0.05 ? (v.handWait || 0) + dt : 0;
-    if (!(fc || rc) || v.handWait > 2) {                              // 走行輪不在彎道裡才換（停太久就直接換，避免卡死）
+    if (!(fc || rc)) {                              // 前後走行部都在直線段才允許同步換手。
       v.handWait = 0;
       if (pendingHandFail || (autoAlarm && rndA() < HAND_FAIL_P)) { const auto = !pendingHandFail; pendingHandFail = false; raiseHandFail(v, nd.need, auto ? { auto: true } : {}); return 0; }
       v.handSw = { to: nd.need, t: HAND_TIME, which: 'both' }; handSwitches++;
     }
   }
-  return nd.off - 0.8;
+  return Math.max(0,nd.off-BOGIE_X-OHT_TRAVEL.guideStart-OHT_TRAVEL.guideMargin);
 }
 
 // ---------- 優先級與路權 ----------

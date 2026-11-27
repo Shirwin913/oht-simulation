@@ -3,7 +3,7 @@
 // ================== 天車 ==================
 const pickables = [];
 // 參考實車外觀：白色高車體、前後端板上寬下窄、車頂綠色 LED 燈條、側面露出內部機構
-const WHEEL_R = 0.065;
+const WHEEL_R = OHT_TRAVEL.wheelRadius;
 const END_X = 0.8;       // 前後端外殼中心位置（車體半長 = END_X + END_T/2）
 const END_T = 0.4;       // 前後端外殼頂部厚度（防墜板收起時藏在外殼底部）
 const BODY_W = 1.0;      // 車寬
@@ -174,26 +174,7 @@ function createVehicle(seg, d) {
   const g = new THREE.Group();
   const add = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); return m; };
   // ---------- 走行部：前後兩組台車，在 C 形軌道裡跑；過彎時台車會相對車體轉向 ----------
-  const bogies = [0.42, -0.42].map(ox => {
-    const b = new THREE.Group(); b.userData.ox = ox; g.add(b);
-    const bAdd = (m, x, y, z) => { m.position.set(x, y, z); b.add(m); return m; };
-    bAdd(box(0.34, 0.04, 0.3, VG.gray), 0, -0.02, 0);                       // 台車框架
-    const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.18, 24), VG.motor);
-    motor.rotation.z = Math.PI / 2; bAdd(motor, 0.02, 0.05, 0.07);          // 走行馬達
-    bAdd(box(0.12, 0.12, 0.1, VG.motor), -0.1, 0.04, -0.05);               // 減速機
-    bAdd(box(0.05, 0.03, 0.05, VG.black), 0.13, 0.05, 0.07);               // 編碼器
-    [-0.05, 0.05].forEach(z => {                                            // 頂部導引輪（分岔用）
-      const gr = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.03, 18), VG.black); bAdd(gr, 0.1, 0.105, z);
-    });
-    bAdd(box(0.08, 0.13, 0.06, VG.gray), 0, -0.11, 0);                     // 穿過軌道開槽的連桿
-    b.userData.wheels = [-0.195, 0.195].map(z => {                         // 走行輪（壓在軌道內翻邊上）
-      const w = new THREE.Group(); bAdd(w, 0, -0.12 + WHEEL_R, z);
-      const tire = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.05, 32), VG.tire); tire.rotation.x = Math.PI / 2; w.add(tire);
-      const hub = box(0.07, 0.07, 0.055, VG.hub); w.add(hub);               // 方形輪轂：看得出輪子在轉
-      return w;
-    });
-    return b;
-  });
+  const bogies=[.42,-.42].map(ox=>{const b=OHTTravelModel.create(ox);g.add(b);return b;});
   // ---------- 外殼：原本的造型（八邊形前後外殼、車頂蓋、頂部防撞板＋LED）----------
   const M = MODEL.meta;
   const capMat = mat(0xf3f4f2, { roughness: 0.45, emissive: accent, emissiveIntensity: 0 });
@@ -290,7 +271,7 @@ function createVehicle(seg, d) {
   vehicles.push(v); placeVehicle(v); return v;
 }
 // 走行部（在軌道裡）和捲揚鼓（在盒子裡）平常看不到，只在透視模式才畫，省效能
-function setHiddenParts(v) { v.bogies.forEach(b => b.visible = xray); v.drum.visible = xray; }
+function setHiddenParts(v) { v.bogies.forEach(b => b.visible = xray || !!v.lift); v.drum.visible = xray; }
 function placeVehicle(v, detailed = true) {
   const pa = pathAhead(v, 0.6);
   const [x, z] = pointAlong(v, 0, pa), [x2, z2] = pointAlong(v, 0.05, pa);
@@ -304,14 +285,15 @@ function placeVehicle(v, detailed = true) {
   if (!detailed) return;                                             // 遠處只畫簡化外形，下面的細節不用算
   // 走行部：台車跟著自己所在位置的軌道方向轉，輪子依行走距離轉動
   const th = v.group.rotation.y, c = Math.cos(th), sn = Math.sin(th);
-  if (xray) v.bogies.forEach(b => {
+  v.bogies.forEach(b => {
+    b.visible=xray || !!v.lift; if(!b.visible)return;
     const ox = b.userData.ox, [bx, bz] = pointAlong(v, ox, pa), [bx2, bz2] = pointAlong(v, ox + 0.05, pa);
     const wx = bx - x, wz = bz - z;
     b.position.set(wx * c - wz * sn, 0, wx * sn + wz * c);
     let rel = Math.atan2(-(bz2 - bz), bx2 - bx) - th;
     rel = ((rel + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     b.rotation.y = rel;
-    b.userData.wheels.forEach(w => w.rotation.z = -v.dist / WHEEL_R);
+    OHTTravelModel.update(b,v,ox>0);
   });
   v.stages.forEach(st => st.position.z = v.shift * st.userData.f);
   v.drum.rotation.x = v.hoist / DRUM_R;
