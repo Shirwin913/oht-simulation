@@ -7,7 +7,7 @@ const WALK = { eye: 1.65, yaw: 0, pitch: 0, keys: new Set(), drag: null, saved: 
 function walkObstacles() {
   const list = [];
   const box = (seg, dc, along, n0, n1) => { const f = frameAt(seg, dc); list.push({ x: f.x, z: f.z, tx: f.tx, tz: f.tz, nx: f.nx, nz: f.nz, along, n0, n1 }); };
-  machines.forEach(m => { const dc = m.ports.reduce((a, p) => a + p.d, 0) / m.ports.length; box(m.seg, dc, 2.3, -3.3, 0.5); });
+  machines.forEach(m => { const dc = m.ports.reduce((a, p) => a + p.d, 0) / m.ports.length; box(m.seg, dc, MACH_W / 2 + 0.1, -(MACH_F + MACH_D + 0.1), 0.5); });
   ntbs.forEach(o => { const dc = o.ports.reduce((a, p) => a + p.d, 0) / o.ports.length; box(o.ports[0].seg, dc, 1.55, -3.95, 0.55); });
   return list;
 }

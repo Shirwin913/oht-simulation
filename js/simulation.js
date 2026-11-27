@@ -204,8 +204,8 @@ function updateVehicle(v, dt) {
     v.yielding = false;
     let { gap, leadV, lead } = leaderInfo(v, pa);
     v.gapAhead = gap;                                                    // 給狀態燈用：前方有東西停車＝紫燈閃
-    // 推車：前面擋路的是休息（或正要停下來休息）的空車，而且自己要開過它的位置 → 叫它往前開
-    if (lead && lead.state === 'idle' && !lead.fault && (lead.parked || lead.target) && gap < PUSH_GAP && distToTarget(v) > gap + 0.5) {
+    // 推車：前面擋路的是休息（或正要停下來休息）的空車，而且自己要開到的位置被它擋住（含目標 Port 就在它車尾前面、開不到的情況）→ 叫它往前開
+    if (lead && lead.state === 'idle' && !lead.fault && (lead.parked || lead.target) && gap < PUSH_GAP && distToTarget(v) > gap - MIN_GAP - 0.05) {
       if (lead.parked) { pushCount++; lead.pushedBy = v.id; }        // 次數太多，不寫進紀錄，只統計
       lead.pushT = PUSH_TIME; lead.target = null; lead.route = [];
     }
@@ -404,7 +404,7 @@ function stepVehicles(dt) {
     for (const v of vehicles) {
       const nm = v.nextMerge; if (!nm || nm.node !== n || front.get(n.id + '|' + nm.inSeg.id) !== v) continue;
       const brake = v.v * v.v / (2 * 2.5 * A) + 0.3;
-      if (nm.dn - holdOf(nm) < brake && nm.dn < cd) { cd = nm.dn; committed = v; }
+      if (v.v > 0.1 && nm.dn - holdOf(nm) < brake && nm.dn < cd) { cd = nm.dn; committed = v; }   // 只算「還在開、煞不住」的車：已經停在等待線上的車（離線不到 0.3 m）不算，不然它每次都直接拿走鎖，另一條支線永遠輪不到
       // 只有「正在開、或停在等待線等鎖」的車才比分數；停在 Port 上取放貨、或被自己前車擋住的車拿了鎖也過不去
       const ready = ['idle', 'toPick', 'toDrop', 'toMaint'].includes(v.state) && !v.parked && ((v.waitT || 0) > 0 || v.v > 0.05);
       const sc = (ready ? 1000 : 0) + rankOf(v) * RANK_SEC + (v.waitT || 0) - nm.dn * 0.01;

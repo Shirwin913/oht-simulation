@@ -28,11 +28,11 @@ const LPD = { mesh: null, tmp: new THREE.Matrix4(), m: new THREE.Matrix4(), s: n
 {
   const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
   const D = {
-    plinth: B(4.5, 0.12, 2.7), frameH: B(3.7, 0.05, 0.035), frameV: B(0.05, 1.7, 0.035),
-    lowerPanel: B(4.4, 0.95, 0.02), seamV: B(0.012, 2.75, 0.02), seamH: B(4.42, 0.012, 0.02),
+    plinth: B(MACH_W + 0.1, 0.12, MACH_D + 0.1), frameH: B(2.5, 0.05, 0.035), frameV: B(0.05, 1.7, 0.035),
+    lowerPanel: B(MACH_W, 0.95, 0.02), seamV: B(0.012, 2.75, 0.02), seamH: B(MACH_W + 0.02, 0.012, 0.02),
     handle: B(0.03, 0.26, 0.04), sideSeam: B(0.02, 2.75, 0.012),
-    topBox: B(1.6, 0.26, 1.2), grille: B(1.4, 0.012, 1.0), duct: new THREE.CylinderGeometry(0.17, 0.17, 0.55, 28), ductCap: new THREE.CylinderGeometry(0.2, 0.2, 0.05, 28),
-    tray: B(4.0, 0.06, 0.3), emoPlate: B(0.17, 0.17, 0.02), emo: new THREE.CylinderGeometry(0.05, 0.055, 0.05, 24),
+    topBox: B(1.2, 0.26, 1.6), grille: B(1.0, 0.012, 1.4), duct: new THREE.CylinderGeometry(0.17, 0.17, 0.55, 28), ductCap: new THREE.CylinderGeometry(0.2, 0.2, 0.05, 28),
+    tray: B(0.3, 0.06, MACH_D - 0.4), emoPlate: B(0.17, 0.17, 0.02), emo: new THREE.CylinderGeometry(0.05, 0.055, 0.05, 24),
     lpLow: B(0.95, 1.09, 0.075), lpTop: B(0.95, 0.13, 0.075), lpSide: B(0.145, 0.53, 0.075),
     lpPanel: B(0.4, 0.17, 0.02), lpBtn: new THREE.CylinderGeometry(0.026, 0.026, 0.02, 16), lpFoot: B(1.0, 0.06, 1.0),
   };
@@ -41,23 +41,23 @@ const LPD = { mesh: null, tmp: new THREE.Matrix4(), m: new THREE.Matrix4(), s: n
   const lpDoors = [];
   machines.forEach(m => {
     const dc = m.ports.reduce((a, p) => a + p.d, 0) / m.ports.length;
-    const g = groupAt(m.seg, dc), zc = -1.95, zf = -0.65;                  // 機台中心 z、正面（朝軌道、Load Port 那一面）
+    const g = groupAt(m.seg, dc), zc = -(MACH_F + MACH_D / 2), zf = -MACH_F;   // 機台中心 z、正面（朝軌道、Load Port 那一面）
     const add = (geo, col, x, y, z) => detailBatch.add(geo, col, g, x, y, z);
     add(D.plinth, 0x2a3036, 0, 0.06, zc);                                  // 底座踢腳板
     add(D.lowerPanel, 0xbfc7ce, 0, 0.6, zf + 0.012);                       // 正面下半部面板
     add(D.frameH, 0x9aa5af, 0, 2.725, zf + 0.025); add(D.frameH, 0x9aa5af, 0, 1.075, zf + 0.025);   // 黑色觀察窗的外框
-    add(D.frameV, 0x9aa5af, -1.825, 1.9, zf + 0.025); add(D.frameV, 0x9aa5af, 1.825, 1.9, zf + 0.025);
-    [-2.2, 2.2].forEach(x => {                                              // 兩側的維修門：接縫＋把手
-      [-1.3, -2.6].forEach(z => add(D.sideSeam, 0x8b949d, x + Math.sign(x) * 0.006, 1.5, z));
-      add(D.handle, 0x3b434b, x + Math.sign(x) * 0.02, 1.45, -1.95);
+    add(D.frameV, 0x9aa5af, -1.225, 1.9, zf + 0.025); add(D.frameV, 0x9aa5af, 1.225, 1.9, zf + 0.025);
+    [-MACH_W / 2, MACH_W / 2].forEach(x => {                                // 兩側（長邊）的維修門：接縫＋把手
+      [zf - 1.2, zf - 2.4, zf - 3.6].forEach(z => add(D.sideSeam, 0x8b949d, x + Math.sign(x) * 0.006, 1.5, z));
+      [zf - 1.8, zf - 3.0].forEach(z => add(D.handle, 0x3b434b, x + Math.sign(x) * 0.02, 1.45, z));
     });
     add(D.seamH, 0x8b949d, 0, 2.98, zf + 0.01);                             // 頂邊收邊
     add(D.topBox, 0xc6cdd4, 0.2, 3.13, zc - 0.3);                          // 頂部控制箱＋排風口
     add(D.grille, 0x59626b, 0.2, 3.267, zc - 0.3);
-    add(D.duct, 0x9aa3ab, 1.55, 3.27, zc - 0.55); add(D.ductCap, 0x7c858e, 1.55, 3.55, zc - 0.55);
-    add(D.duct, 0x9aa3ab, -1.05, 3.27, zc - 0.75); add(D.ductCap, 0x7c858e, -1.05, 3.55, zc - 0.75);
-    add(D.tray, 0x6b747d, 0, 3.03, zc - 1.1);                               // 頂部背面的線槽
-    add(D.emoPlate, 0xf2c200, 2.02, 1.45, zf + 0.012); add(D.emo, 0xd62828, 2.02, 1.45, zf + 0.045);   // 緊急停止按鈕
+    add(D.duct, 0x9aa3ab, 0.8, 3.27, zc - 1.5); add(D.ductCap, 0x7c858e, 0.8, 3.55, zc - 1.5);
+    add(D.duct, 0x9aa3ab, -0.7, 3.27, zc - 1.3); add(D.ductCap, 0x7c858e, -0.7, 3.55, zc - 1.3);
+    add(D.tray, 0x6b747d, -1.15, 3.03, zc);                               // 頂部背面的線槽
+    add(D.emoPlate, 0xf2c200, 0, 2.85, zf + 0.012); add(D.emo, 0xd62828, 0, 2.85, zf + 0.045);   // 緊急停止按鈕（正面觀察窗上方）
     m.ports.forEach(p => {                                                  // Load Port：靠機台的直立面板（FIMS 開門口）、底座操作面板
       const lx = p.d - dc;
       // FIMS 對接面：中間是開門口（FOUP 門 0.6×0.5 m 剛好塞得進去），FOUP 前移 250 mm 後外殼正面貼平這片面板

@@ -8,14 +8,14 @@
 //   ・軌道是單向的：每段軌道（segment）都有起點節點與終點節點
 // 位置的表示法：(segment, d) ＝ 在某一段軌道上、離該段起點 d 公尺
 
-const ZONE_HALF = 36;     // 每個區塊主幹線直線段半長（直線從 cx-36 到 cx+36）
+const ZONE_HALF = 44;     // 每個區塊主幹線直線段半長（直線從 cx-44 到 cx+44）
 const MAIN_R = 2.5;       // 主幹線兩端半圓半徑（上下兩條直線相距 2 × MAIN_R）
 const ZONE_GAP = 12;      // 左右兩個區塊主幹線直線末端之間的距離（連接線長度）
 const ROW_GAP = 50;       // 上下兩排區塊主幹線中心線的距離
 const BAY_W = 2.5;        // Bay 兩條車道離 Bay 中心線的距離（分岔到匯流 2×(BAY_W+BAY_R)：太短的話，在匯流點前等的車會擋住 Bay 入口，塞車時整圈卡死）
 const BAY_R = 2.0;        // 從主幹線轉進／轉出 Bay 的彎道半徑（太小的話車身會掃到主幹線）
 const LINK_R = 2.0;       // 上下區塊連接線的彎道半徑
-const LINK_X = 32;        // 上下連接線離區塊中心的 x 距離（西端往南、東端往北）
+const LINK_X = 40;        // 上下連接線離區塊中心的 x 距離（西端往南、東端往北；在最外側 Bay 的分岔／匯流點外面）
 // 4 個區塊：A 西北、B 東北、C 西南、D 東南
 const ZONES = [
   { name: 'A', cx: -(ZONE_HALF + ZONE_GAP / 2), zc: -ROW_GAP / 2 }, { name: 'B', cx: ZONE_HALF + ZONE_GAP / 2, zc: -ROW_GAP / 2 },
@@ -23,7 +23,8 @@ const ZONES = [
 ];
 // 每個區塊北側 5 條、南側 4 條 Bay（x 為相對區塊中心）；len ＝ Bay 深度（U 彎中心離主幹線中心線的距離）
 // 上排區塊南側、下排區塊北側的 Bay 會伸進兩排之間的走道，所以比較短
-const BAY_XS_N = [-24, -12, 0, 12, 24], BAY_XS_S = [-18, -6, 6, 18];
+// Bay 間距 16 m：機台是「直的」（窄面朝軌道、機身往後深 4.4 m），兩條相鄰 Bay 背對背的機台中間還留 0.9 m
+const BAY_XS_N = [-32, -16, 0, 16, 32], BAY_XS_S = [-24, -8, 8, 24];
 const BAY_LENS = { outer: [18, 22, 20, 22, 18], inner: [16, 19, 19, 16] };
 const CROSS_DX = null;    // 區塊內南北捷徑離區塊中心的 x 距離（null ＝ 不設捷徑，原因見下面）
 
@@ -101,7 +102,7 @@ ZONES.forEach((z, zi) => {
     bays.push({ zone: z, name: z.name + (++k), x: z.cx + dx, len, north: false, ...p,
       branchNode: z.mark(z.sBot(p.branchX), `${z.name}${k}分岔`), mergeNode: z.mark(z.sBot(p.mergeX), `${z.name}${k}匯流`) });
   });
-  // 區塊內南北捷徑：Bay 每 12 公尺一條、每條佔 9 公尺，主幹線上找不到離所有分岔／匯流點夠遠的位置，
+  // 區塊內南北捷徑：Bay 每 16 公尺一條、每條佔 9 公尺，主幹線上找不到離所有分岔／匯流點夠遠的位置，
   // 太近的話剛轉進捷徑的車會跟剛轉進 Bay 的車撞在一起，所以區塊內不設捷徑（要回頭就走兩端半圓或連接線）
   if (CROSS_DX !== null) {
     const cx = z.cx + CROSS_DX;

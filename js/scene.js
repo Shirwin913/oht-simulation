@@ -39,7 +39,7 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.25, 900);   // near 不要�
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.495;
-function resetView() { camera.position.set(-15, 125, 125); controls.target.set(0, 1, 2); }
+function resetView() { camera.position.set(-18, 145, 145); controls.target.set(0, 1, 2); }
 resetView();
 function resize() { const w = app.clientWidth, h = app.clientHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 window.addEventListener('resize', resize); resize();
@@ -48,7 +48,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x2a3440, 0.75));
 const sun = new THREE.DirectionalLight(0xffffff, 0.85);
 sun.position.set(25, 60, 20); sun.castShadow = true;
 sun.shadow.mapSize.set(4096, 4096);
-Object.assign(sun.shadow.camera, { left: -92, right: 92, top: 58, bottom: -58, near: 1, far: 170 });
+Object.assign(sun.shadow.camera, { left: -108, right: 108, top: 58, bottom: -58, near: 1, far: 170 });
 sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02;                   // 減少陰影紋路（shadow acne）
 scene.add(sun); scene.add(sun.target);
 // 陰影範圍跟著鏡頭：拉近看的時候陰影貼圖只涵蓋鏡頭附近，解析度高很多、比較不會有鋸齒。
@@ -58,7 +58,7 @@ const _sr = new THREE.Vector3(), _su = new THREE.Vector3(), _sc = new THREE.Vect
 function fitShadow() {
   if (!sun.castShadow || BENCH) return;
   const dist = camera.position.distanceTo(controls.target);
-  const half = Math.min(92, Math.max(24, Math.pow(2, Math.ceil(Math.log2(dist * 2.5)))));   // 一段一段跳（2 的次方），拉近拉遠時陰影不會一直微微變動
+  const half = Math.min(108, Math.max(24, Math.pow(2, Math.ceil(Math.log2(dist * 2.5)))));   // 一段一段跳（2 的次方），拉近拉遠時陰影不會一直微微變動
   const texel = 2 * half / sun.shadow.mapSize.x;
   _sr.crossVectors(SUN_DIR, new THREE.Vector3(0, 1, 0)).normalize(); _su.crossVectors(_sr, SUN_DIR).normalize();
   const t = controls.target, a = Math.round(t.dot(_sr) / texel) * texel, b = Math.round(t.dot(_su) / texel) * texel, c = t.dot(SUN_DIR);
@@ -113,7 +113,7 @@ function makeLabel(text, { bg = 'rgba(15,20,28,.85)', fg = '#e6edf3', scale = 1,
 const labels = [];
 
 // 地板（高架地板）
-const FLOOR_W = 180, FLOOR_D = 112, FLOOR_Z = 0;
+const FLOOR_W = 212, FLOOR_D = 112, FLOOR_Z = 0;
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_W, FLOOR_D), mat(0x39424d, { roughness: 0.9 }));
 floor.rotation.x = -Math.PI / 2; floor.position.z = FLOOR_Z; floor.receiveShadow = true; scene.add(floor);
 const grid = new THREE.GridHelper(FLOOR_W, FLOOR_W, 0x4a5561, 0x434d58); grid.position.set(0, 0.01, FLOOR_Z);

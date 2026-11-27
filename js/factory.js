@@ -27,7 +27,9 @@ const G = {
   lamp: new THREE.CylinderGeometry(0.14, 0.14, 0.22, 24),
 };
 G.towerBase = new THREE.CylinderGeometry(0.1, 0.12, 0.06, 24); G.towerRing = new THREE.CylinderGeometry(0.146, 0.146, 0.012, 24); G.towerCap = new THREE.CylinderGeometry(0.12, 0.14, 0.04, 24);
-G.machine = G.box(4.4, 3.0, 2.6); G.front = G.box(3.6, 1.6, 0.05); G.screen = G.box(0.9, 0.55, 0.06);
+// 機台是「直的」：窄面（Load Port 那一面）朝軌道，寬 3.0 m，機身往後深 4.4 m（照現場）
+const MACH_W = 3.0, MACH_D = 4.4, MACH_F = 0.65;                       // 寬、深、正面離軌道中心線的距離
+G.machine = G.box(MACH_W, 3.0, MACH_D); G.front = G.box(2.4, 1.6, 0.05); G.screen = G.box(0.06, 0.55, 0.9);   // 操作螢幕裝在側面靠前
 G.portBase = G.box(0.95, 1.0, 0.95); G.portPlate = G.box(0.82, 0.04, 0.82);
 G.pioBox = G.box(0.16, 0.12, 0.14);
 G.stbShelf = G.box(2.3, 0.05, 0.95);                                       // 儲格底板
@@ -86,18 +88,18 @@ const lampBank = makeLedBank(G.lamp);              // 所有機台的三色燈�
 const machineLabels = [];                          // 機台名牌（只在鏡頭附近顯示）
 function makeMachine(seg, dc, name) {
   const side = -1, m = { type: 'machine', name, ports: [], lights: [] };
-  const g = groupAt(seg, dc), zc = side * 1.95;
+  const g = groupAt(seg, dc), zc = side * (MACH_F + MACH_D / 2);
   { const f = frameAt(seg, dc); m.x = f.x + zc * f.nx; m.z = f.z + zc * f.nz; m.seg = seg; }
   staticBatch.add(G.machine, 0xd3d9df, g, 0, 1.5, zc);
   staticBatch.add(G.front, 0x23303c, g, 0, 1.9, side * 0.63);
-  screenBatch.add(G.screen, 0x1d6fa5, g, 1.6, 2.4, side * 0.6);
+  screenBatch.add(G.screen, 0x1d6fa5, g, MACH_W / 2 + 0.03, 1.75, side * 1.5);
   // 三色燈塔：機台頂上一個深色底座，三顆燈直接疊在上面，燈與燈之間是細細的深色分隔環，最上面一個頂蓋
-  { const tx = -1.8, tz = zc + side * 0.9;
+  { const tx = -1.05, tz = side * (MACH_F + 0.6);
     staticBatch.add(G.towerBase, 0x2b3036, g, tx, 3.03, tz);
     [3.06, 3.28, 3.50, 3.72].forEach(y => staticBatch.add(G.towerRing, 0x3a4047, g, tx, y, tz));
     staticBatch.add(G.towerCap, 0x2b3036, g, tx, 3.745, tz); }
   ['#ef4444', '#f59e0b', '#22c55e'].forEach((c, i) => {                 // 三色燈：紅、黃、綠
-    const led = lampBank.add(g, -1.8, 3.06 + 0.11 + (2 - i) * 0.22, zc + side * 0.9);   // 三顆燈一顆疊一顆貼在一起，最下面坐在底座上
+    const led = lampBank.add(g, -1.05, 3.06 + 0.11 + (2 - i) * 0.22, side * (MACH_F + 0.6));   // 三顆燈一顆疊一顆貼在一起，最下面坐在底座上
     led.emissive.set(c); led.emissiveIntensity = 0.05; m.lights.push(led);
   });
   const lb = makeLabel(name, { scale: 0.8 }); lb.position.set(0, 3.9, zc); g.add(lb); labels.push(lb);
