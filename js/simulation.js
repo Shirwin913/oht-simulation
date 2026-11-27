@@ -89,7 +89,9 @@ function handCheck(v, pa, dt) {
   if (!v.handSw) {
     const [fc, rc] = bogieInCurve(v, pa);
     v.handWait = v.v < 0.05 ? (v.handWait || 0) + dt : 0;
-    if (!(fc || rc)) {                              // 前後走行部都在直線段才允許同步換手。
+    // 前後走行部都在直線段才換手；但如果分岔點就緊接在彎道後面，車子停下來時走行部還在彎道裡，
+    // 永遠等不到「都在直線」→ 停住，後面的車一台接一台排上來整區卡死。所以停下來等超過 2 秒就直接換（慢慢換，不會撞）。
+    if (!(fc || rc) || v.handWait > 2) {
       v.handWait = 0;
       if (pendingHandFail || (autoAlarm && rndA() < HAND_FAIL_P)) { const auto = !pendingHandFail; pendingHandFail = false; raiseHandFail(v, nd.need, auto ? { auto: true } : {}); return 0; }
       v.handSw = { to: nd.need, t: HAND_TIME, which: 'both' }; handSwitches++;

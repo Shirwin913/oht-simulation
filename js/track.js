@@ -111,19 +111,36 @@ const inJunctionRun = (sg, d) => (junctionRuns.get(sg.id) || []).some(([a, b]) =
         if (cx * n0[0] + cy * n0[1] + cz * n0[2] >= 0) { tri(A, B, C, n0, n0, n1); tri(A, C, D, n0, n1, n1); }
         else { tri(A, C, B, n0, n1, n0); tri(A, D, C, n0, n1, n1); }
       };
+      // 交會處不是整片面「留或丟」（一格一格判斷，邊緣會變成鋸齒，兩條路線的階梯轉角還會剛好都沒畫、留下縫），
+      // 而是算出每個頂點離別條路線多遠，沿著交界線把三角形精確切開：側壁離別條路線中心 < 0.30 讓開、底板 < 0.18 讓開（縫）
+      const limits = prof.map((p, k) => { const q = prof[(k + 1) % prof.length];
+        return Math.abs(p[1] - q[1]) > Math.abs(p[0] - q[0]) ? .30 : (p[1] <= -.11 && q[1] <= -.11 ? .18 : -1); });
+      const tri3 = (A, B, C, fa, fb, fc, na, nb, nc) => {
+        if (fa >= 0 && fb >= 0 && fc >= 0) { tri(A, B, C, na, nb, nc); return; }
+        if (fa < 0 && fb < 0 && fc < 0) return;
+        const P = [A, B, C], F = [fa, fb, fc], N = [na, nb, nc], poly = [];
+        for (let i = 0; i < 3; i++) { const j = (i + 1) % 3;
+          if (F[i] >= 0) poly.push([P[i], N[i]]);
+          if ((F[i] >= 0) !== (F[j] >= 0)) { const t = F[i] / (F[i] - F[j]), L = (u, v) => u.map((x, k) => x + (v[k] - x) * t); poly.push([L(P[i], P[j]), L(N[i], N[j])]); } }
+        for (let i = 1; i + 1 < poly.length; i++) tri(poly[0][0], poly[i][0], poly[i + 1][0], poly[0][1], poly[i][1], poly[i + 1][1]);
+      };
+      const quadClip = (A, B, C, D, n0, n1, fA, fB, fC, fD) => {   // A,B 在前一個斷面，C,D 在下一個斷面（A→B 是斷面上的一條邊）
+        const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2], vx = D[0] - A[0], vy = D[1] - A[1], vz = D[2] - A[2];
+        const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;   // 三角形繞向要跟法線同一邊（外面看得到）
+        if (cx * n0[0] + cy * n0[1] + cz * n0[2] >= 0) { tri3(A, B, C, fA, fB, fC, n0, n0, n1); tri3(A, C, D, fA, fC, fD, n0, n1, n1); }
+        else { tri3(A, C, B, fA, fC, fB, n0, n1, n0); tri3(A, D, C, fA, fD, fC, n0, n1, n1); }
+      };
       runFrames.forEach(frames => {
+        let r0 = ring(frames[0]), d0 = r0.map(v => Math.min(9, railJunction(v[0], v[2], frames[0].railOwner)));
         for (let i = 0; i + 1 < frames.length; i++) {
-          const f0 = frames[i], f1 = frames[i + 1], r0 = ring(f0), r1 = ring(f1);
+          const f0 = frames[i], f1 = frames[i + 1], r1 = ring(f1), d1 = r1.map(v => Math.min(9, railJunction(v[0], v[2], f1.railOwner)));
           for (let k = 0; k < prof.length; k++) {
-            const k2 = (k + 1) % prof.length, [ex, ey] = edgeN[k];
-            const mx = (r0[k][0] + r1[k][0] + r0[k2][0] + r1[k2][0]) / 4, mz = (r0[k][2] + r1[k][2] + r0[k2][2] + r1[k2][2]) / 4;
-            const vertical = Math.abs(prof[k][1] - prof[k2][1]) > .1, bottom = prof[k][1] <= -.11 && prof[k2][1] <= -.11;
-            if (vertical || bottom) { const dj = railJunction(mx, mz, f0.railOwner);
-              if (vertical && dj < .30) continue;             // 側壁：在別條路線的槽或板件裡 → 讓開（藏在另一條板件下面的側壁，頂邊會跟頂面打架，看起來像一條黑線）
-              if (bottom && dj < .18) continue;               // 底板：在別條路線的縫裡 → 讓開（吊臂要從這裡過）
-            }
-            quad(r0[k], r0[k2], r1[k2], r1[k], [ex * f0.nx, ey, ex * f0.nz], [ex * f1.nx, ey, ex * f1.nz]);
+            const k2 = (k + 1) % prof.length, [ex, ey] = edgeN[k], L = limits[k];
+            const n0 = [ex * f0.nx, ey, ex * f0.nz], n1 = [ex * f1.nx, ey, ex * f1.nz];
+            if (L < 0) { quad(r0[k], r0[k2], r1[k2], r1[k], n0, n1); continue; }
+            quadClip(r0[k], r0[k2], r1[k2], r1[k], n0, n1, d0[k] - L, d0[k2] - L, d1[k2] - L, d1[k] - L);
           }
+          r0 = r1; d0 = d1;
         }
         // 板件兩端：比直軌寬出來的那一圈要封起來（接直軌的地方看得到端面）
         if (opt.caps) for (const [f, sgn] of [[frames[0], -1], [frames[frames.length - 1], 1]]) {

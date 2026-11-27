@@ -1,4 +1,4 @@
-// traveldemo.js — 走行與分岔 3D 示範（原本只在 travel-demo.html，現在嵌進「看軌道」教學視窗的一章；travel-demo.html 也改用這支）
+// traveldemo.js — 走行與分岔 3D 示範（嵌在「看軌道」教學視窗的「1. 認識走行機構」）
 // createTravelDemo(root)：在 root 裡放控制列＋3D 畫面，回傳 { dispose }。
 // 只在畫面有變化時才畫（不跑常駐迴圈），離開這一章／關掉視窗就 dispose() 釋放 WebGL，不會多吃 GPU。
 // 走行機構模型（OHTTravelModel）跟全廠模擬共用 travel_mechanism.js；軌道與導軌位置是示意，不是製造尺寸。
@@ -14,8 +14,8 @@ function createTravelDemo(root, opts = {}) {
       <label><input data-td="rail" type="checkbox" checked> 透明軌道</label>
       <span class="tdhand"><i data-hand="1" title="點一下切換成上手">上手</i><i data-hand="0" title="點一下切換成下手">下手</i><i data-body title="顯示／隱藏走行部下面吊著的車廂">車廂</i></span>
     </div>
-    <div class="tdcanvas" role="img" aria-label="走行部與山形換手機構的 3D 示意，可拖曳旋轉、滾輪縮放"></div>
-    <div class="tdfoot"><span class="tdstatus" aria-live="polite"></span><span class="tdmut">拖曳旋轉 · 滾輪縮放 · 模型與全廠共用 · 傳動與尺寸為示意</span></div>`;
+    <div class="tdcanvas" role="img" aria-label="走行部與山形換手機構的 3D 示意，可拖曳旋轉、右鍵平移、滾輪縮放"></div>
+    <div class="tdfoot"><span class="tdstatus" aria-live="polite"></span><span class="tdmut">左鍵旋轉 · 右鍵平移 · 滾輪縮放 · 雙擊回中心 · 模型與全廠共用 · 傳動與尺寸為示意</span></div>`;
   const $ = k => root.querySelector(`[data-td="${k}"]`), host = root.querySelector('.tdcanvas'), status = root.querySelector('.tdstatus');
 
   // ---------- 場景 ----------
@@ -34,12 +34,14 @@ function createTravelDemo(root, opts = {}) {
   const box = (parent, w, h, d, material, x = 0, y = 0, z = 0) => { const g = new T.BoxGeometry(w, h, d), m = new T.Mesh(g, material); own.push(g); m.position.set(x, y, z); parent.add(m); return m; };
 
   let p = 1, yaw = .70, pitch = .48, distance = 2.5, focusZ = 0, focusX = 0, drag = null, dead = false;
+  const pan = new T.Vector3();                                           // 平移：看的中心點從走行部移開多少（右鍵／Shift 拖曳）
   const setPose = () => { for (const u of units) OHTTravelModel.setHand(u, p); };
   function render() {
     if (dead || !renderer.domElement.isConnected) return;
     const fy = showBody ? -.45 : .30, dist = distance * (showBody ? 1.8 : 1);   // 有車廂時鏡頭拉遠、看的位置往下
-    camera.position.set(focusX + Math.sin(yaw) * Math.cos(pitch) * dist, fy + Math.sin(pitch) * dist, focusZ + Math.cos(yaw) * Math.cos(pitch) * dist);
-    camera.lookAt(focusX, fy, focusZ); renderer.render(scene, camera);
+    const tx = focusX + pan.x, ty = fy + pan.y, tz = focusZ + pan.z;
+    camera.position.set(tx + Math.sin(yaw) * Math.cos(pitch) * dist, ty + Math.sin(pitch) * dist, tz + Math.cos(yaw) * Math.cos(pitch) * dist);
+    camera.lookAt(tx, ty, tz); renderer.render(scene, camera);
   }
 
   // ---------- 軌道：轉彎路線（直線接 R=2 的 90° 彎）＋直行路線，同一個開放的槽 ----------
@@ -54,39 +56,65 @@ function createTravelDemo(root, opts = {}) {
   const profile = RAW.flatMap((p, k) => { const q = RAW[(k + 1) % RAW.length]; return p[1] < BOT && q[1] < BOT ? sub(p, q, Math.max(1, Math.ceil(Math.abs(q[0] - p[0]) / .08))) : [p]; });
   // 另一條路線的中心線離 (x, z)（斷面單位）多遠：轉彎路線只看直線；直行路線只看彎出去的那段（s > 0，前面那段兩條重疊、只畫一次）
   const otherDist = (x, z, curved) => {
-    if (curved) return z >= -3 && z <= 5.2 ? Math.abs(x) : Infinity;
-    let m = Infinity;
+    if (curved) return z >= -3 && z <= 5.2 ? Math.abs(x) : 99;
+    if (z < 0) return 99;                                                 // 分岔點以前兩條是同一段（用有限的大數，三角形才切得開；Infinity 會算出 NaN、那一格就破洞）
+    let m = 99;
     if (x <= R && z >= 0) m = Math.min(m, Math.abs(Math.hypot(x - R, z) - R));
     if (x >= R) m = Math.min(m, Math.abs(z - R));
     return m;
   };
-  // 照全廠的做法：彎道和交會段是白色板件、直軌是鋁擠型；交會處兩條合成一片 ——
-  //   側壁落在另一條路線的槽或板件裡就讓開，底板落在另一條路線的縫裡也讓開（吊臂要從這裡過）
+  // 照全廠的做法：彎道和交會段是白色板件、直軌是鋁擠型；交會處兩條合成一片（聯集）——
+  //   轉彎路線在直軌的範圍裡（離直軌中心 < 0.31）整個讓給直軌畫；直軌的側壁落在轉彎路線的板件裡就讓開，底板讓出轉彎路線的縫（吊臂要從這裡過）。
+  // 不是整片面「留或丟」（板件很寬，整片丟會切出一階一階的鋸齒），而是算出每個頂點離另一條路線多遠，沿著交界線把三角形精確切開。
+  const FINE = .05;                                                     // 斷面每條邊切細到這麼寬，交界線才切得準
+  const fineProf = prof => prof.flatMap((p, k) => { const q = prof[(k + 1) % prof.length]; return sub(p, q, Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / FINE))); });
+  // 三角形依每個頂點的值 f 切開，只留 f ≥ 0 的部分
+  const clipTri = (pts, fs, out) => {
+    if (fs.every(f => f >= 0)) { out.push(...pts[0], ...pts[1], ...pts[2]); return; }
+    if (fs.every(f => f < 0)) return;
+    const poly = [];
+    for (let i = 0; i < 3; i++) {
+      const a = pts[i], b = pts[(i + 1) % 3], fa = fs[i], fb = fs[(i + 1) % 3];
+      if (fa >= 0) poly.push(a);
+      if ((fa >= 0) !== (fb >= 0)) { const t = fa / (fa - fb); poly.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]); }
+    }
+    for (let i = 1; i + 1 < poly.length; i++) out.push(...poly[0], ...poly[i], ...poly[i + 1]);
+  };
   function sweep(prof, mat, curved = true, startDistance = -3, endDistance = 5.2, cut = false) {
     const verts = [];
+    if (cut) prof = fineProf(prof);
     const ring = s => { const q = path(s, curved); return prof.map(([x, y]) => [(q.x + x * Math.cos(q.a)) * .52, y * .52 - .122, (q.z - x * Math.sin(q.a)) * .52]); };
-    let prev = ring(startDistance);
-    for (let s = startDistance + .04; s <= endDistance + .0001; s += .04) {
-      const next = ring(s);
+    const dist = v => otherDist(v[0] / .52, v[2] / .52, curved);
+    // 這條邊要讓開的門檻（離另一條路線中心線小於這個就不畫）
+    const limit = (i, j) => {
+      if (curved) return U(.31);                                          // 轉彎路線：直軌範圍裡全部讓給直軌
+      const vertical = Math.abs(prof[i][1] - prof[j][1]) > Math.abs(prof[i][0] - prof[j][0]), bottom = prof[i][1] < BOT && prof[j][1] < BOT;
+      if (vertical) return prof[i][0] > 0 ? U(.315) : U(.30);            // 直軌靠彎出去那一側的側壁：跟轉彎路線的側壁重疊就讓給它（不然一開始那一小段兩層疊在一起）
+      if (bottom) return U(.18);                                          // 底板：讓出轉彎路線的縫
+      return -Infinity;                                                   // 頂板、天花板照畫
+    };
+    // 格數取整、平均切：最後一格一定落在終點上（用固定 0.04 一格往前加，最後會停在終點前面，兩段接頭處就留一條縫）
+    const steps = Math.max(1, Math.ceil((endDistance - startDistance) / .04 - 1e-6)), at = [];
+    for (let k = 1; k <= steps; k++) at.push(startDistance + (endDistance - startDistance) * k / steps);
+    if (cut && startDistance < 0 && endDistance > 0 && !at.some(v => Math.abs(v) < 1e-6)) at.push(0);   // 分岔點剛好放一圈：直軌的側壁從這裡開始讓給轉彎路線，不會早讓一格留縫
+    at.sort((a, b) => a - b);
+    let prev = ring(startDistance), prevD = cut ? prev.map(dist) : null;
+    for (const sNext of at) {
+      const next = ring(sNext), nextD = cut ? next.map(dist) : null;
       for (let i = 0; i < prof.length; i++) {
         const j = (i + 1) % prof.length;
-        if (cut) {
-          const vertical = Math.abs(prof[i][1] - prof[j][1]) > .1, bottom = prof[i][1] < BOT && prof[j][1] < BOT;
-          if (vertical || bottom) {
-            const mx = (prev[i][0] + next[i][0] + prev[j][0] + next[j][0]) / 4 / .52, mz = (prev[i][2] + next[i][2] + prev[j][2] + next[j][2]) / 4 / .52, d = otherDist(mx, mz, curved);
-            if (vertical && d < U(.30)) continue;
-            if (bottom && d < U(.18)) continue;
-          }
-        }
-        verts.push(...prev[i], ...next[j], ...prev[j], ...prev[i], ...next[i], ...next[j]);
+        if (!cut) { verts.push(...prev[i], ...next[j], ...prev[j], ...prev[i], ...next[i], ...next[j]); continue; }
+        const L = limit(i, j);
+        clipTri([prev[i], next[j], prev[j]], [prevD[i] - L, nextD[j] - L, prevD[j] - L], verts);
+        clipTri([prev[i], next[i], next[j]], [prevD[i] - L, nextD[i] - L, nextD[j] - L], verts);
       }
-      prev = next;
+      prev = next; prevD = nextD;
     }
     const geo = new T.BufferGeometry(); geo.setAttribute('position', new T.Float32BufferAttribute(verts, 3)); geo.computeVertexNormals();
     own.push(geo); turnRail.add(new T.Mesh(geo, mat));
   }
   const railLook = (color, opacity) => { const m = new T.MeshStandardMaterial({ color, roughness: .55, metalness: .25, transparent: true, opacity, depthWrite: false, side: T.DoubleSide }); own.push(m); return m; };
-  const whiteMat = railLook(0xf1eee6, .30), aluMat = railLook(0xd3d9de, .20);
+  const whiteMat = railLook(0xf1eee6, .24), aluMat = railLook(0xd3d9de, .24);   // 同樣透明度，接頭處才不會一段亮一段暗
   // 直行路線在交會段（離彎出去那條不到 1 m 的地方，前面再多 1 m）用白色板件，其他是鋁擠型
   let J = 0; for (let z = 0; z < 5.2; z += .02) { if (otherDist(0, z, false) > U(1.0)) { J = z + U(.3); break; } }
   const L0 = -U(1.0);
@@ -175,15 +203,45 @@ function createTravelDemo(root, opts = {}) {
     handRaf = requestAnimationFrame(step);
   });
   prog.oninput = () => { progress = Number(prog.value) / 1000; setPlay(false); pose(); };
-  const setView = v => { curView = v; $('view').value = v; [yaw, pitch, distance] = v === 'front' ? [0, 0, 1.4] : v === 'top' ? [0, Math.PI / 2 - .001, 2.6] : v === 'side' ? [Math.PI / 2, 0, 2.2] : [.7, .48, 2.5]; };
+  const setView = v => { curView = v; $('view').value = v; pan.set(0, 0, 0); [yaw, pitch, distance] = v === 'front' ? [0, 0, 1.4] : v === 'top' ? [0, Math.PI / 2 - .001, 2.6] : v === 'side' ? [Math.PI / 2, 0, 2.2] : [.7, .48, 2.5]; };
   $('view').onchange = e => { setView(e.target.value); render(); };
   $('rail').onchange = e => { turnRail.visible = e.target.checked; render(); };
 
-  // ---------- 滑鼠：拖曳旋轉、滾輪縮放 ----------
-  host.onpointerdown = e => { drag = { x: e.clientX, y: e.clientY }; host.setPointerCapture(e.pointerId); };
-  host.onpointermove = e => { if (!drag) return; yaw -= (e.clientX - drag.x) * .008; pitch = Math.max(-1.3, Math.min(1.55, pitch + (e.clientY - drag.y) * .008)); drag = { x: e.clientX, y: e.clientY }; render(); };
-  host.onpointerup = host.onpointercancel = () => drag = null;
-  const onWheel = e => { e.preventDefault(); distance = Math.min(7, Math.max(1.2, distance * Math.exp(e.deltaY * .001))); render(); };
+  // ---------- 滑鼠：左鍵拖曳旋轉、右鍵（或 Shift＋左鍵）拖曳平移、滾輪縮放、雙擊回到走行部 ----------
+  // 觸控：一指旋轉、兩指平移＋捏合縮放
+  const touches = new Map();
+  const panBy = (dx, dy) => {
+    const dist = distance * (showBody ? 1.8 : 1), k = 2 * Math.tan(camera.fov * Math.PI / 360) * dist / Math.max(1, host.clientHeight);
+    camera.updateMatrixWorld();
+    const right = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 0), up = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    pan.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
+  };
+  host.oncontextmenu = e => e.preventDefault();
+  host.onpointerdown = e => {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.button === 1 || e.shiftKey };
+    host.setPointerCapture(e.pointerId);
+  };
+  host.onpointermove = e => {
+    if (!drag) return;
+    const last = touches.get(e.pointerId);
+    if (touches.size >= 2 && last) {                                   // 兩指：平移＋縮放
+      const pts = [...touches.values()], d0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const now = [...touches.values()], d1 = Math.hypot(now[0].x - now[1].x, now[0].y - now[1].y);
+      panBy((e.clientX - last.x) / 2, (e.clientY - last.y) / 2);
+      if (d0 > 0 && d1 > 0) distance = Math.min(7, Math.max(.35, distance * d0 / d1));
+      render(); return;
+    }
+    if (last) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (drag.pan) panBy(dx, dy);
+    else { yaw -= dx * .008; pitch = Math.max(-1.55, Math.min(1.55, pitch + dy * .008)); }
+    drag.x = e.clientX; drag.y = e.clientY; render();
+  };
+  host.onpointerup = host.onpointercancel = e => { touches.delete(e.pointerId); if (!touches.size) drag = null; };
+  host.ondblclick = () => { pan.set(0, 0, 0); render(); };
+  const onWheel = e => { e.preventDefault(); distance = Math.min(7, Math.max(.35, distance * Math.exp(e.deltaY * .001))); render(); };
   host.addEventListener('wheel', onWheel, { passive: false });
   const ro = new ResizeObserver(() => { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); render(); });
   ro.observe(host);
