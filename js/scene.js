@@ -51,22 +51,40 @@ sun.shadow.mapSize.set(4096, 4096);
 Object.assign(sun.shadow.camera, { left: -108, right: 108, top: 58, bottom: -58, near: 1, far: 170 });
 sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02;                   // 減少陰影紋路（shadow acne）
 scene.add(sun); scene.add(sun.target);
-// 陰影範圍跟著鏡頭：拉近看的時候陰影貼圖只涵蓋鏡頭附近，解析度高很多、比較不會有鋸齒。
-// 中心點對齊陰影貼圖的像素格，平移鏡頭時陰影邊緣才不會一直閃。
+// 陰影範圍跟著「畫面看得到的地方」：把畫面四周（和中間幾條線）投到地板和天車高度，
+// 換算到太陽的座標，取包住它們的方塊當陰影範圍，再夾在廠房範圍裡。
+// 原本只以鏡頭看的中心點為圓心取一個正方形：斜著看整個廠房時，畫面遠處、角落超出那個方塊，影子就整片不見。
+// 範圍大小一段一段跳（2 的次方）、中心點對齊陰影貼圖的像素格，平移、縮放時陰影邊緣才不會一直閃。
 const SUN_DIR = new THREE.Vector3(25, 60, 20).normalize();
 const _sr = new THREE.Vector3(), _su = new THREE.Vector3(), _sc = new THREE.Vector3();
+_sr.crossVectors(SUN_DIR, new THREE.Vector3(0, 1, 0)).normalize(); _su.crossVectors(_sr, SUN_DIR).normalize();
+const _ray = new THREE.Vector3(), _hit = new THREE.Vector3();
 function fitShadow() {
   if (!sun.castShadow || BENCH) return;
-  const dist = camera.position.distanceTo(controls.target);
-  const half = Math.min(108, Math.max(24, Math.pow(2, Math.ceil(Math.log2(dist * 2.5)))));   // 一段一段跳（2 的次方），拉近拉遠時陰影不會一直微微變動
+  camera.updateMatrixWorld();
+  const fx = FLOOR_W / 2, z0 = FLOOR_Z - FLOOR_D / 2, z1 = FLOOR_Z + FLOOR_D / 2;
+  let minA = Infinity, maxA = -Infinity, minB = Infinity, maxB = -Infinity;
+  const add = p => { const a = p.dot(_sr), b = p.dot(_su); if (a < minA) minA = a; if (a > maxA) maxA = a; if (b < minB) minB = b; if (b > maxB) maxB = b; };
+  for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) {
+    if (i > 0 && i < 4 && j > 0 && j < 4 && !(i === 2 && j === 2)) continue;          // 畫面外框＋中心
+    _ray.set(i / 2 - 1, j / 2 - 1, 0.5).unproject(camera).sub(camera.position).normalize();
+    for (const y of [0, 11]) {                                                        // 地板、天花板（軌道和天車的高度）
+      let t = _ray.y < -1e-4 ? (y - camera.position.y) / _ray.y : 400;
+      if (!(t > 0)) t = 400; t = Math.min(t, 400);
+      _hit.copy(camera.position).addScaledVector(_ray, t);
+      _hit.x = Math.max(-fx, Math.min(fx, _hit.x)); _hit.z = Math.max(z0, Math.min(z1, _hit.z)); _hit.y = Math.max(0, Math.min(11, _hit.y));
+      add(_hit);
+    }
+  }
+  const need = Math.max(maxA - minA, maxB - minB) / 2 + 4;                          // 邊緣多留 4 m（高的東西影子會拉長）
+  const half = Math.min(128, Math.max(24, Math.pow(2, Math.ceil(Math.log2(need)))));
   const texel = 2 * half / sun.shadow.mapSize.x;
-  _sr.crossVectors(SUN_DIR, new THREE.Vector3(0, 1, 0)).normalize(); _su.crossVectors(_sr, SUN_DIR).normalize();
-  const t = controls.target, a = Math.round(t.dot(_sr) / texel) * texel, b = Math.round(t.dot(_su) / texel) * texel, c = t.dot(SUN_DIR);
+  const a = Math.round((minA + maxA) / 2 / texel) * texel, b = Math.round((minB + maxB) / 2 / texel) * texel, c = controls.target.dot(SUN_DIR);
   _sc.copy(_sr).multiplyScalar(a).addScaledVector(_su, b).addScaledVector(SUN_DIR, c);
-  sun.target.position.copy(_sc); sun.position.copy(_sc).addScaledVector(SUN_DIR, 90);
+  sun.target.position.copy(_sc); sun.position.copy(_sc).addScaledVector(SUN_DIR, 120);
   sun.target.updateMatrixWorld();
   const cam = sun.shadow.camera;
-  if (cam.right !== half) { cam.left = -half; cam.right = half; cam.top = half; cam.bottom = -half; cam.far = 200; cam.updateProjectionMatrix(); }
+  if (cam.right !== half) { cam.left = -half; cam.right = half; cam.top = half; cam.bottom = -half; cam.far = 260; cam.updateProjectionMatrix(); }
 }
 
 function applyGfx(level, why) {
