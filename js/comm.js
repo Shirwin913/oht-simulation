@@ -17,10 +17,11 @@ const MESH_R = 18;          // 天車之間的無線距離
 const GW_R = 12;            // 閘道器（接有線網路的節點）的範圍：比較小，大部分車要靠別台車轉送
 const MESH_LOST_T = 3;     // 連續收不到這麼久才算斷線（車子開過網路比較稀的地方，短短一兩秒收不到不算）
 
-// ---------- AP 擺放：每個區塊 3×2 台，掛在天花板 ----------
+// ---------- AP 擺放：每個區塊 4×2 台，掛在天花板 ----------
+//   主幹線直線段 ±44 m、Bay 間距 16 m：每排 4 台（間距 22 m），主幹線兩端半圓、區塊之間的連接線都在 AP 的 22 m 範圍內
 const aps = [];
 let apMeshes = null;
-ZONES.forEach(z => [-24, 0, 24].forEach(dx => [-13, 13].forEach(dz => aps.push({ id: `AP-${z.name}${aps.filter(a => a.zone === z).length + 1}`, zone: z, x: z.cx + dx, z: z.zc + dz, down: null }))));
+ZONES.forEach(z => [-33, -11, 11, 33].forEach(dx => [-13, 13].forEach(dz => aps.push({ id: `AP-${z.name}${aps.filter(a => a.zone === z).length + 1}`, zone: z, x: z.cx + dx, z: z.zc + dz, down: null }))));
 aps.forEach((a, i) => { a.idx = i; a.color = new THREE.Color().setHSL((i * 0.618) % 1, 0.75, 0.6); });
 
 {
@@ -133,9 +134,9 @@ function reconnect(v) {
 vehicles.forEach(v => { v.ap = bestAp(v)[0]; });
 
 // ---------- Mesh 網狀網路 ----------
-//   閘道器：每個區塊 2 台，接有線網路回控制系統。天車彼此在 MESH_R 內就能互傳，一跳一跳轉送到閘道器
+//   閘道器：每個區塊 3 台，接有線網路回控制系統。天車彼此在 MESH_R 內就能互傳，一跳一跳轉送到閘道器
 const gws = [];
-ZONES.forEach(z => [-18, 18].forEach(dx => gws.push({ id: `GW-${z.name}${gws.filter(g => g.zone === z).length + 1}`, zone: z, x: z.cx + dx, z: z.zc, down: null, mesh: true })));
+ZONES.forEach(z => [-30, 0, 30].forEach(dx => gws.push({ id: `GW-${z.name}${gws.filter(g => g.zone === z).length + 1}`, zone: z, x: z.cx + dx, z: z.zc, down: null, mesh: true })));
 gws.forEach((g, i) => { g.idx = i; g.color = new THREE.Color(0xf59e0b); });
 {
   const b = makeBatch();
