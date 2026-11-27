@@ -159,26 +159,30 @@ const OHTTravelModel = (() => {
    mesh(u,new T.CylinderGeometry(.123,.123,.009,48),hub,0,yy-.007,0);
   }
   for(let i=0;i<8;i++){const a=i*Math.PI/4;bolt(u,Math.cos(a)*.098,-.005,Math.sin(a)*.098)}
+  // 回轉軸承以下（底座板、螺栓、補強三角板、往下接車廂的連接座）是固定在車身上的：台車轉彎時它不跟著轉。
+  // 放在自己的 group（role 'bodyMount'），create() 之後用 mountYaw() 把它轉回車身的方向。
+  const mg=new T.Group();mg.userData.role='bodyMount';u.add(mg);
   // Chamfered mounting plate, below the guide wheels rather than across their tires.
   const mount=new T.Shape();for(const [i,v]of [[-.21,-.225],[.21,-.225],[.225,-.21],[.225,.21],[.21,.225],[-.21,.225],[-.225,.21],[-.225,-.21]].entries())i?mount.lineTo(...v):mount.moveTo(...v);mount.closePath();
-  const mountGeo=new T.ExtrudeGeometry(mount,{depth:.028,bevelEnabled:true,bevelSize:.004,bevelThickness:.003,bevelSegments:2});mountGeo.rotateX(-Math.PI/2);mesh(u,mountGeo,metal,0,-.195,0);
-  box(u,.20,.018,.23,hub,0,-.157,0);
+  const mountGeo=new T.ExtrudeGeometry(mount,{depth:.028,bevelEnabled:true,bevelSize:.004,bevelThickness:.003,bevelSegments:2});mountGeo.rotateX(-Math.PI/2);mesh(mg,mountGeo,metal,0,-.195,0);
+  box(mg,.20,.018,.23,hub,0,-.157,0);
   for(const xx of [-.15,.15])for(const zz of [-.15,.15]){
-   bolt(u,xx,-.155,zz);
-   mesh(u,new T.CylinderGeometry(.018,.018,.012,6),hub,xx,-.206,zz);
+   bolt(mg,xx,-.155,zz);
+   mesh(mg,new T.CylinderGeometry(.018,.018,.012,6),hub,xx,-.206,zz);
   }
-  for(const side of [-1,1]){
-   plate(u,[[0,-.157],[.080,-.157],[0,-.083]],.016,side>0?.10:-.18,0,-.008);
-   const brace=plate(u,[[0,-.157],[.075,-.157],[0,-.091]],.016,0,0,0);brace.rotation.y=side*Math.PI/2;brace.position.z=side*.10;
-  }
+  // 補強三角板（加強肋）：直角邊貼著中間的軸承座，斜邊往外、往下接到底座板（四片都朝外）
+  [0,Math.PI/2,Math.PI,-Math.PI/2].forEach(a=>{
+   const g=plate(mg,[[0,-.157],[.080,-.157],[0,-.083]],.016,0,0,0);g.geometry.translate(0,0,-.008);
+   g.rotation.y=a;g.position.set(.10*Math.cos(a),0,-.10*Math.sin(a));
+  });
   // Continuous load path: frame cross-member -> pivot -> plate -> neck -> yoke.
   box(u,.33,.045,.20,metal,0,.065,0);
   mesh(u,new T.CylinderGeometry(.105,.105,.07,32),metal,0,.015,0);
-  mesh(u,new T.CylinderGeometry(.103,.103,.035,32),metal,0,-.152,0);
-  box(u,.25,.105,.25,metal,0,-.242,0);
-  for(const xx of [-.16,.16])box(u,.075,.14,.32,metal,xx,-.292,0);
-  for(const zz of [-.13,.13])box(u,.395,.045,.075,metal,0,-.352,zz);
-  for(const xx of [-.16,.16])for(const zz of [-.10,.10])bolt(u,xx,-.253,zz);
+  mesh(mg,new T.CylinderGeometry(.103,.103,.035,32),metal,0,-.152,0);
+  box(mg,.25,.105,.25,metal,0,-.242,0);
+  for(const xx of [-.16,.16])box(mg,.075,.14,.32,metal,xx,-.292,0);
+  for(const zz of [-.13,.13])box(mg,.395,.045,.075,metal,0,-.352,zz);
+  for(const xx of [-.16,.16])for(const zz of [-.10,.10])bolt(mg,xx,-.253,zz);
   // Bundled harness follows the upper cross member with loops near the drive unit.
   for(let i=0;i<4;i++)cable(u,[[-.31,.39+i*.006,-.28],[-.18,.37+i*.006,-.29],[0,.375+i*.006,-.28],[.18,.37+i*.006,-.29],[.31,.39+i*.006,-.28]],.0035);
   for(const x of [-.24,.24])box(u,.013,.035,.027,dark,x,.38,-.28);
@@ -227,7 +231,7 @@ const OHTTravelModel = (() => {
  function create(ox=0){const root=new T.Group(),orientation=new T.Group();root.userData.ox=ox;root.add(orientation);
    orientation.rotation.y=Math.PI/2;orientation.scale.setScalar(OHT_TRAVEL.scale);orientation.position.y=OHT_TRAVEL.base;
    const model=prototype.clone(true);orientation.add(model);root.userData.carriers=[];root.userData.wheels=[];root.userData.lowerGuides=[];root.userData.handWheels=[];
-   model.traverse(o=>{const r=o.userData.role;if(r==='carrier')root.userData.carriers.push(o);if(r==='travelWheel')root.userData.wheels.push(o);if(r==='lowerGuide')root.userData.lowerGuides.push(o);
+   model.traverse(o=>{const r=o.userData.role;if(r==='bodyMount')root.userData.mount=o;if(r==='carrier')root.userData.carriers.push(o);if(r==='travelWheel')root.userData.wheels.push(o);if(r==='lowerGuide')root.userData.lowerGuides.push(o);
      if(r==='handWheel'){let c=o.parent;while(c&&c.userData.role!=='carrier')c=c.parent;o.userData.side=c?c.userData.side:1;root.userData.handWheels.push(o);}});
    setHand(root,1);return root;
  }
@@ -241,9 +245,11 @@ const OHTTravelModel = (() => {
      if(on){if(w.userData.d0==null)w.userData.d0=dist-(w.userData.a||0)*w.userData.r*OHT_TRAVEL.scale;w.userData.a=(dist-w.userData.d0)/(w.userData.r*OHT_TRAVEL.scale);w.rotation.y=w.userData.side*w.userData.a;}
      else w.userData.d0=null;}
  }
+ // 回轉軸承以下固定在車身上：rel＝車身方向減掉這組走行部的方向（走行部轉彎時，底座轉回去對齊車身）
+ function mountYaw(root,rel){const m=root.userData.mount;if(m)m.rotation.y=rel;}
  function update(root,v,front){const state=front?v.hf:v.hr;let p=(state||v.hand)==='down'?0:1;
    const sw=v.handSw;if(sw && (sw.which==='both'||!sw.which||sw.which===(front?'f':'r'))){const u=1-Math.max(0,Math.min(1,sw.t/HAND_TIME));const to=sw.to==='up'?1:0;p=p+(to-p)*(u*u*(3-2*u));}
    setHand(root,p);roll(root,v.dist||0,null);
  }
- return {create,setHand,update,roll};
+ return {create,setHand,update,roll,mountYaw};
 })();

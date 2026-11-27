@@ -19,7 +19,7 @@ function updateUI() {
   const waitingStorage = ports.filter(p => p.owner.type === 'machine' && p.foup && p.foup.storageWaitingSince != null && !p.foup.job);
   const emptyStbs = stbPorts.filter(p => !p.foup).length, reservedStbs = stbPorts.filter(p => !p.foup && p.reserved).length;
   const longestStorage = waitingStorage.reduce((n,p) => Math.max(n, simTime - p.foup.storageWaitingSince), 0);
-  $('storageInfo').innerHTML = `實體空儲格：${emptyStbs} 格（已預約 ${reservedStbs} 格）<br>等待空儲位：<b>${waitingStorage.length}</b> 個 FOUP<br>目前最久等待：${Math.floor(longestStorage)} 秒<br>已取得儲位的平均等待：${storageWaitCount ? (storageWaitSum / storageWaitCount).toFixed(1) + ' 秒' : '—'}` + (waitingStorage.length ? `<details ${$('storageInfo').querySelector('details[open]') ? 'open' : ''}><summary>查看等待中的機台</summary>${waitingStorage.map(p => `<div>${p.name} · ${p.foup.id} · ${Math.floor(simTime - p.foup.storageWaitingSince)} 秒<br>${p.foup.storageWaitReason}</div>`).join('')}</details>` : '');
+  $('storageInfo').innerHTML = `實體空儲格：${emptyStbs} 格（已預約 ${reservedStbs} 格）<br>等待空儲位：<b>${waitingStorage.length}</b> 個 FOUP<br>目前最久等待：${Math.floor(longestStorage)} 秒<br>已取得儲位的平均等待：${storageWaitCount ? (storageWaitSum / storageWaitCount).toFixed(1) + ' 秒' : '—'}<br>下一台機台沒空、先送儲格：${bufferedNoTool} 次` + (waitingStorage.length ? `<details ${$('storageInfo').querySelector('details[open]') ? 'open' : ''}><summary>查看等待中的機台</summary>${waitingStorage.map(p => `<div>${p.name} · ${p.foup.id} · ${Math.floor(simTime - p.foup.storageWaitingSince)} 秒<br>${p.foup.storageWaitReason}</div>`).join('')}</details>` : '');
   $('vehTotal').textContent = vehicles.length;
   $('vehCount').textContent = vehicles.length;
   $('vehList').innerHTML = vehicles.map(v => {
@@ -328,9 +328,18 @@ function openInfoGroup(name, tab) {
   show(tab || G.tabs[0][0]);
 }
 
-// 只變更下一次初始化的佔用率，不在運行途中憑空增減貨物。
-if (!$('stbFill').querySelector(`option[value="${STB_INITIAL_FILL}"]`)) {
-  const o = document.createElement('option'); o.value = STB_INITIAL_FILL; o.textContent = STB_INITIAL_FILL + '%'; $('stbFill').appendChild(o);
-}
+// 只變更下一次初始化的佔用率，不在運行途中憑空增減貨物。可以直接輸入 0～100（小數一位），也可以從常用值挑。
 $('stbFill').value = String(STB_INITIAL_FILL);
-$('applyStbFill').onclick = () => { const url = new URL(location.href); url.searchParams.set('stbFill', $('stbFill').value); location.href = url.href; };
+{
+  const input = $('stbFill'), err = $('stbFillErr');
+  const apply = () => {
+    const raw = input.value.trim(), v = Number(raw);
+    if (raw === '' || !Number.isFinite(v) || v < 0 || v > 100) {                  // 不合法就不重新開始，標出錯誤
+      err.textContent = '請輸入 0～100 之間的數字'; input.classList.add('bad'); input.focus(); return;
+    }
+    const url = new URL(location.href); url.searchParams.set('stbFill', String(Math.round(v * 10) / 10)); location.href = url.href;
+  };
+  input.addEventListener('input', () => { err.textContent = ''; input.classList.remove('bad'); });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+  $('applyStbFill').onclick = apply;
+}

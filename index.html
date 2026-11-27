@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OHT 天車 3D 模擬</title>
-<link rel="stylesheet" href="css/style.css?v=0e552d5282c8">
+<link rel="stylesheet" href="css/style.css?v=7831edfa1e6b">
 </head>
 <body>
 <div id="app"></div>
@@ -55,8 +55,9 @@
     <div class="row"><label style="flex:none;display:flex;align-items:center;gap:5px"><input type="checkbox" id="idleSlow" checked>閒置時降速（省 GPU）</label></div>
     <div class="mut">15 秒沒動滑鼠／鍵盤：模擬執行中降到每秒 20 張畫面，暫停中降到每秒 5 張；一動滑鼠馬上恢復。</div>
     <div class="sec">模擬參數</div>
-    <div class="row"><label for="stbFill">開場儲格使用率</label><select id="stbFill"><option value="40">40%</option><option value="98">98%</option><option value="99">99%</option><option value="100">100%</option></select><button id="applyStbFill">重新開始</button></div>
-    <div class="mut">重新開始會重設本次模擬；運行後佔用率會隨物流變化。</div>
+    <div class="row"><label for="stbFill">開場儲格使用率</label><input type="number" id="stbFill" min="0" max="100" step="any" inputmode="decimal" list="stbFillPresets" aria-describedby="stbFillErr"><span class="unit">%</span><datalist id="stbFillPresets"><option value="40"></option><option value="70"></option><option value="90"></option><option value="98"></option><option value="99"></option><option value="100"></option></datalist><button id="applyStbFill">重新開始</button></div>
+    <div class="fieldErr" id="stbFillErr" role="alert"></div>
+    <div class="mut">直接輸入 0～100（可到小數一位），或點輸入框從常用值挑；按 Enter 或「重新開始」套用。重新開始會重設本次模擬；運行後佔用率會隨物流變化。</div>
     <div class="row"><label>模擬速度</label><input type="range" id="speed" min="0.5" max="20" step="0.5" value="2"><span class="val" id="speedVal">2x</span></div>
     <div class="row"><label>加工時間</label><input type="range" id="procTime" min="60" max="3000" step="60" value="1500"><span class="val" id="procVal">1500s</span></div>
     <div class="row"><label>最高車速</label><input type="range" id="vmax" min="1" max="6" step="0.5" value="3.5"><span class="val" id="vmaxVal">3.5</span></div>
@@ -159,29 +160,29 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="js/rng.js?v=fc291fc18429"></script>
 <script src="js/vehicle_model.js?v=dd110a72b6d9"></script>
-<script src="js/config.js?v=52d5d501e3d9"></script>
+<script src="js/config.js?v=3db3862aa97c"></script>
 <script src="js/network.js?v=abd986b26b4d"></script>
 <script src="js/scene.js?v=f7087b965218"></script>
-<script src="js/travel_mechanism.js?v=b6aedde278ea"></script>
+<script src="js/travel_mechanism.js?v=92e056e27bcd"></script>
 <script src="js/track.js?v=ca1fdbe33831"></script>
 <script src="js/factory.js?v=bfeee8d63868"></script>
 <script src="js/detail.js?v=c5f4ec9ffb63"></script>
 <script src="js/foup.js?v=8c154eb87d84"></script>
-<script src="js/process.js?v=3987f63d4cbb"></script>
-<script src="js/vehicle.js?v=342be0417364"></script>
-<script src="js/simulation.js?v=6192fe90b55a"></script>
+<script src="js/process.js?v=0f8e20c83f12"></script>
+<script src="js/vehicle.js?v=8cf6a0bc5d58"></script>
+<script src="js/simulation.js?v=8819b5f7e708"></script>
 <script src="js/alarms.js?v=ae1d4660d22b"></script>
 <script src="js/maintenance.js?v=61ffb9e99f4a"></script>
 <script src="js/comm.js?v=4d20e98a3362"></script>
 <script src="js/hmi.js?v=8b532959dd6b"></script>
 <script src="js/hmi_detail.js?v=2b58d7401742"></script>
 <script src="js/ntb.js?v=da18e0f7c5fd"></script>
-<script src="js/ui.js?v=7600c955924f"></script>
+<script src="js/ui.js?v=9296ef6ebbd7"></script>
 <script src="js/walk.js?v=aa0aa0ac6fa8"></script>
 <script src="js/tour.js?v=b95e43435dd5"></script>
 <script src="js/bench.js?v=db960b3cc62b"></script>
 <script src="js/handdemo.js?v=2b644d0701b5"></script>
-<script src="js/traveldemo.js?v=b792528addf4"></script>
+<script src="js/traveldemo.js?v=7c21f12df23c"></script>
 <script src="js/e84demo.js?v=422a058ee327"></script>
 <script src="js/event_log.js?v=be298656496b"></script>
 <script src="js/main.js?v=c9171612e0e6"></script>

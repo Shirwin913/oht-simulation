@@ -52,7 +52,7 @@ const liftY = l => H - liftEase(l) * (H - LIFT_LOW);
 // 開場 STB 佔用率；網址可用 ?stbFill=40 切回低負載。
 const requestedStbFill = Number(new URLSearchParams(location.search).get('stbFill') ?? 98);
 const STB_INITIAL_FILL = Number.isFinite(requestedStbFill) ? Math.max(0, Math.min(100, requestedStbFill)) : 98;
-let storageWaitSum = 0, storageWaitCount = 0;
+let storageWaitSum = 0, storageWaitCount = 0, bufferedNoTool = 0;   // bufferedNoTool：下一台機台沒空、改送儲格暫放的次數
 // 閒置時降速（main.js gfxTick）：記錄最後一次滑鼠／鍵盤／觸控的時間；設定頁可以關掉（記在這台電腦的瀏覽器裡）
 const IDLE = { ms: 15000, last: performance.now(), on: true };
 try { IDLE.on = localStorage.getItem('ohtIdleSlow') !== '0'; } catch (e) {}

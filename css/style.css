@@ -17,6 +17,12 @@ h1 { font-size:17px; margin:0 0 2px; }
 .row label { flex:0 0 74px; color:#c3ccd5; }
 .row input[type=range] { flex:1; accent-color:var(--acc); }
 .row .val { width:46px; text-align:right; font-variant-numeric:tabular-nums; }
+.row input[type=number] { width:68px; background:#1f2a36; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:4px 6px; font:inherit; font-size:13px; font-variant-numeric:tabular-nums; }
+.row input[type=number]:focus { outline:none; border-color:var(--acc); }
+.row input[type=number].bad { border-color:#ef4444; }
+.row .unit { color:var(--mut); margin-left:-4px; }
+.fieldErr { color:#f87171; font-size:12px; margin:-2px 0 2px 82px; min-height:0; }
+.fieldErr:empty { display:none; }
 button { background:#1f2a36; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:5px 10px;
   font:inherit; font-size:13px; cursor:pointer; }
 button:hover { background:#273544; }

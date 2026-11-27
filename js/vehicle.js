@@ -293,6 +293,7 @@ function placeVehicle(v, detailed = true) {
     let rel = Math.atan2(-(bz2 - bz), bx2 - bx) - th;
     rel = ((rel + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     b.rotation.y = rel;
+    OHTTravelModel.mountYaw(b, -rel);                                  // 回轉軸承以下（底座、連接座）固定在車身上，不跟著台車轉
     OHTTravelModel.update(b,v,ox>0);
   });
   v.stages.forEach(st => st.position.z = v.shift * st.userData.f);

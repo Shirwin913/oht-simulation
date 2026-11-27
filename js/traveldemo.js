@@ -168,7 +168,9 @@ function createTravelDemo(root, opts = {}) {
     const dx = front.x - rear.x, dz = front.z - rear.z;
     bodyLink.position.set(focusX, -.32, focusZ); bodyLink.scale.z = Math.hypot(dx, dz) * .52 / 1.2; bodyLink.rotation.y = Math.atan2(dx, dz);
     bodyLink.visible = !showBody;
-    if (bodyG) { bodyG.visible = showBody; bodyG.position.set(focusX, -.06, focusZ); bodyG.rotation.y = Math.atan2(-dz, dx); }   // 車廂跟著前後走行部中點、朝行進方向
+    const bodyYaw = Math.atan2(-dz, dx);
+    units.forEach(u => { let r = bodyYaw - u.rotation.y; r = Math.atan2(Math.sin(r), Math.cos(r)); OHTTravelModel.mountYaw(u, r); });   // 回轉軸承以下固定在車身上：轉回車身方向
+    if (bodyG) { bodyG.visible = showBody; bodyG.position.set(focusX, -.06, focusZ); bodyG.rotation.y = bodyYaw; }   // 車廂跟著前後走行部中點、朝行進方向
     const hand = curvedRoute ? '下手' : '上手';
     status.textContent = q < .04 ? '依下一個分岔路線，準備切換至' + hand : q < .15 ? '前後八顆換手輪同步切換至' + hand : q < .20 ? hand + '已完成，尚未進入導軌'
       : center + .60 <= 0 ? hand + '保持到位，進入分岔導軌'

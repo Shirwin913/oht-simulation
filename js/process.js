@@ -5,7 +5,7 @@ function machineCycleStart(p, f, duration) {
   if (f.empty) { f.state='ready'; f.outputKind='stb'; f.waferCount=0; f.doorOpen=0; p.dock=0; p.processStage='空 FOUP，等待回儲位'; return; }
   f.state = 'docking'; f.timer = Math.max(.1,duration); f.processDuration = f.timer;
   f.waferCount = 25; f.waferTransfer = null; f.doorOpen = 0;
-  f.storageWaitingSince = null; delete f.outputKind;
+  f.storageWaitingSince = null; f.toolWaitSince = null; delete f.outputKind;
   p.dock = 0; p.processStage = 'MOVIN 前移對接';
 }
 // 每一片晶圓的取放（機械手臂吸盤式托片）：一片的伸出＋吸起＋收回約 3 秒（模擬時間：伸出 1.2 秒、吸起 0.6 秒、收回 1.2 秒），其餘時間停在機台裡

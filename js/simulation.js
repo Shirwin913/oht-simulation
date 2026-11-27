@@ -451,6 +451,8 @@ const nearest = (from, list) => { const r = list.reduce((best, q) => { const d =
 const usable = q => !q.owner.down && !q.seg.blocked && q.lpMode !== 'manual';   // Load Port 切 Manual：不派車過去
 const MAX_NEW_JOBS = 40;   // 每一輪最多產生幾筆新任務（地圖大時避免一次算太多）
 const NEXT_TOOL_POOL = 12; // 機台下貨送下一台機台時，從最近的幾台空機台裡挑
+const NEXT_TOOL_WAIT = 30; // 做完要送下一台機台、但全廠沒有空機台：等這麼多秒還是沒有，就先送儲格暫放、把 Load Port 讓出來
+//   （不讓的話，機台 Port 會被「做完、等下一台」的 FOUP 佔滿 → 沒有空機台 → 大家互等，FOUP 一直放在機台上沒人來夾）
 const CROSS_ZONE = 0.25;   // 機台下貨送到「任何地方」的機台的機率（多半會跨區塊）
 // 原儲位綁定：搬運結束（上機、清貨、取消）就解除
 const homePorts = new Set();
@@ -486,6 +488,10 @@ function dispatch() {
       if (toMachine && reach.length) dest = (rndD() < CROSS_ZONE ? pick(reach)
         : pick(reach.map(q => [routeDist(p, q), q]).sort((a, b) => a[0] - b[0]).slice(0, NEXT_TOOL_POOL).map(x => x[1])));
       else if (!toMachine) { const q = nearest(p, freeStbs); if (q) dest = q; }
+      else {                                                            // 下一台機台都沒空：等一下，還是沒有就先送儲格暫放（之後從儲格再送機台）
+        if (f.toolWaitSince == null) f.toolWaitSince = simTime;
+        if (simTime - f.toolWaitSince >= NEXT_TOOL_WAIT) { const q = nearest(p, freeStbs); if (q) { dest = q; f.toStbBecauseFull = true; } }
+      }
     }
     if (p.owner.type === 'machine' && f.outputKind === 'stb' && !dest) {
       if (f.storageWaitingSince == null) f.storageWaitingSince = simTime;
@@ -502,6 +508,8 @@ function dispatch() {
       }
       take(dest.owner.type === 'stb' ? freeStbs : freeMachines, dest);
       dest.reserved = true; created++;
+      if (f.toStbBecauseFull) { bufferedNoTool++; log(`📦 ${f.id} 下一台機台都沒空（等了 ${Math.round(simTime - f.toolWaitSince)} 秒），先送 ${dest.name} 暫放，讓出 ${p.name}`); }
+      f.toolWaitSince = null; f.toStbBecauseFull = false;
       const job = { id: ++jobSeq, from: p, to: dest, foup: f, created: simTime, vehicle: null, pri: f.pri || 0 };
       f.job = job; jobs.push(job);
     }
