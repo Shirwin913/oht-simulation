@@ -49,15 +49,30 @@ function addPort(seg, d, lat, top, owner, name, doorSide, ledMat) {
   if (owner.type === 'machine') { p.deck = pendingDeck; p.dock = 0; pendingDeck = null; }
   ports.push(p); owner.ports.push(p); return p;
 }
+// 機台 Load Port 會前後移動（對接）的台面＋三根定位銷：全部機台合在一起畫（InstancedMesh）。
+// 原本每個 Port 4 個獨立物件，312 個 Port 就是 1248 次繪製呼叫，內顯光是處理這些呼叫就很吃力
+const deckBank = (() => {
+  const MAX = 1024, PINS = [[.25,0],[-.15,.22],[-.15,-.22]];
+  const mk = (geo, material, n) => { const im = new THREE.InstancedMesh(geo, material, n); im.count = 0; im.frustumCulled = false; im.castShadow = true; im.receiveShadow = true; scene.add(im); return im; };
+  const plate = mk(G.portPlate, mat(0x2a3138, {metalness:.4}), MAX), pin = mk(G.pin, mat(0xc9ced4), MAX * 3);
+  const t = new THREE.Matrix4(), w = new THREE.Matrix4();
+  function write(d) {
+    t.makeTranslation(d.lx, 1.0, d.z); w.multiplyMatrices(d.g.matrixWorld, t); plate.setMatrixAt(d.i, w);
+    PINS.forEach(([x, z], k) => { t.makeTranslation(d.lx + x, 1.04, d.z + z); w.multiplyMatrices(d.g.matrixWorld, t); pin.setMatrixAt(d.i * 3 + k, w); });
+    plate.instanceMatrix.needsUpdate = true; pin.instanceMatrix.needsUpdate = true;
+  }
+  return { add(g, lx) {
+    g.updateMatrixWorld(true);
+    const d = { g, lx, z: 0, i: plate.count, setZ(z) { if (z !== d.z) { d.z = z; write(d); } } };
+    plate.count++; pin.count += 3; write(d); return d;
+  } };
+})();
 const LC_Z = 0.46;                                   // 光閘在 Load Port 靠走道那一側（區域座標 z）
 // Load Port 外觀（群組 g 的區域座標，x 沿軌道、z 側向）
 function portMesh(g, lx, ledSide, pio, moving = false) {
   staticBatch.add(G.portBase, 0x7d8894, g, lx, 0.5, 0);
   if (moving) {
-    const deck = new THREE.Group(); deck.position.x = lx; g.add(deck);
-    const plate = new THREE.Mesh(G.portPlate, mat(0x2a3138, {metalness:.4})); plate.position.y = 1.0; deck.add(plate);
-    [[.25,0],[-.15,.22],[-.15,-.22]].forEach(([x,z]) => { const pin = new THREE.Mesh(G.pin,mat(0xc9ced4)); pin.position.set(x,1.04,z);deck.add(pin); });
-    pendingDeck = deck;
+    pendingDeck = deckBank.add(g, lx);
   } else {
     staticBatch.add(G.portPlate, 0x2a3138, g, lx, 1.0, 0);
     [[.25,0],[-.15,.22],[-.15,-.22]].forEach(([px,pz]) => staticBatch.add(G.pin,0xc9ced4,g,lx+px,1.04,pz));

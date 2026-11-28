@@ -118,16 +118,31 @@ const FB = (() => {
   });
   parts[5].im.renderOrder = 2;
   parts[4].im.renderOrder = 2;                                           // 半透明外殼最後畫
-  return { parts, tag: parts[3].im, used: 0, free: [], tmp: new THREE.Matrix4(), local: new THREE.Matrix4(), foups: new Map(), dirty: false };
+  // 遠處的 FOUP：簡化外形（底座＋外殼＋頂部夾取板，三十幾個三角形、不透明）。
+  // 一千多個 FOUP 全部用完整模型（約 3 千多個三角形，外殼還是半透明雙面）會讓內顯很卡；遠看根本看不到那些細節
+  const farB = makeBatch();
+  farB.add(new THREE.BoxGeometry(.68, .07, .70), 0x303438, null, 0, .035, 0);       // 底座
+  farB.add(new THREE.BoxGeometry(.62, .50, .64), 0xc9581f, null, 0, .33, 0);        // 外殼（看起來是橘色外殼透出裡面的灰色晶圓，所以顏色暗一點）
+  farB.add(new THREE.BoxGeometry(.012, .44, .56), 0xa94312, null, .316, .335, 0);   // 門
+  farB.add(new THREE.BoxGeometry(.34, .03, .34), 0x6e757a, null, 0, .673, 0);       // 頂部夾取板（天車夾的地方）
+  const far = new THREE.InstancedMesh(farB.geometry(), FG.solidMat, FOUP_MAX);
+  far.frustumCulled = false; far.castShadow = true; far.count = 0; scene.add(far);
+  return { parts, far, tag: parts[3].im, used: 0, free: [], tmp: new THREE.Matrix4(), local: new THREE.Matrix4(), zero: new THREE.Matrix4().makeScale(0, 0, 0), foups: new Map(), near: [], dirty: false };
 })();
 // 設定某個 FOUP 的世界矩陣
 function setFoupMatrix(f, m) {
   FB.foups.set(f.idx,f);
   if (!f.worldMatrix) f.worldMatrix = new THREE.Matrix4(); f.worldMatrix.copy(m);
   const count = f.empty ? 0 : (f.waferCount ?? 25), open = f.doorOpen || 0;
+  const hidden = m.elements[15] === 0;
+  const far = hidden || (f.lodFar && !f.detailedWafers && !(open > 0 && !f.lodVeryFar));   // 遠處用簡化外形（開門中的，除非非常遠，用完整模型）
+  FB.far.setMatrixAt(f.idx, far ? m : FB.zero);
+  const slot = nearSlot(f, !far);
   for (let i=0;i<FB.parts.length;i++) {
     const p = FB.parts[i]; FB.local.copy(p.local);
-    if (i===0 && f.detailedWafers) { p.im.setMatrixAt(f.idx, waferDetail.zero); continue; }   // 近處：換成高面數的那一份（waferDetail.solidHi）
+    if (far && i !== 3) continue;                                         // 遠處的不佔完整模型的位置（GPU 完全不用處理）；批號色標（i=3）遠處也留著，看得出急件／特急
+    const at = i === 3 ? f.idx : slot;
+    if (i===0 && f.detailedWafers) { p.im.setMatrixAt(at, waferDetail.zero); continue; }   // 近處：換成高面數的那一份（waferDetail.solidHi）
     if (i===1) {
       if (f.detailedWafers || count===0) FB.tmp.makeScale(0,0,0);
       else { FB.local.makeScale(1,count/25,1); FB.local.setPosition(.02,.14+.18*count/25,0); FB.tmp.multiplyMatrices(m,FB.local); }
@@ -137,9 +152,19 @@ function setFoupMatrix(f, m) {
       }
       FB.tmp.multiplyMatrices(m,FB.local);
     }
-    p.im.setMatrixAt(f.idx,FB.tmp);
+    p.im.setMatrixAt(at,FB.tmp);
   }
   FB.dirty = true;
+}
+// 完整模型只畫「近處」的 FOUP：近處的排在前面連續的位置（slot），count 設成近處的數量。
+// 原本是全部 1000 多個都畫、遠的縮成 0，GPU 還是要跑每個頂點，內顯一樣吃力
+function nearSlot(f, want) {
+  if (want) { if (f.slot == null) { f.slot = FB.near.length; FB.near.push(f); } return f.slot; }
+  if (f.slot != null) {
+    const last = FB.near.pop(), s = f.slot; f.slot = null;
+    if (last !== f) { last.slot = s; FB.near[s] = last; setFoupMatrix(last, last.worldMatrix); }   // 最後一個搬進空出來的位置
+  }
+  return -1;
 }
 const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.Euler(), _fv = new THREE.Vector3(), _fs = new THREE.Vector3(1, 1, 1);
 function placeFoupAt(f, port) {
@@ -160,7 +185,8 @@ function updateFoupInstances() {
   }
   updateDetailedWafers();
   if (FB.dirty) {
-    for (const p of FB.parts) { p.im.count = FB.used; p.im.instanceMatrix.needsUpdate = true; }
+    for (const p of FB.parts) { p.im.count = p.im === FB.tag ? FB.used : FB.near.length; p.im.instanceMatrix.needsUpdate = true; }
+    FB.far.count = FB.used; FB.far.instanceMatrix.needsUpdate = true;
     if (FB.tag.instanceColor) FB.tag.instanceColor.needsUpdate = true;
     FB.dirty = false;
   }
@@ -198,8 +224,22 @@ const waferDetail = (() => {
   inMesh.count=0; inMesh.frustumCulled=false; inMesh.castShadow=false; inMesh.renderOrder=4; scene.add(inMesh);
   return {mesh, inMesh, details, solidHi, selected:[], time:-Infinity, local:new THREE.Matrix4(), world:new THREE.Matrix4(), zero:new THREE.Matrix4().makeScale(0,0,0)};
 })();
+// FOUP 遠近分級：離鏡頭超過 FOUP_FAR[畫質] 公尺就換成簡化外形（前後留 4 m 緩衝，在交界附近才不會一直換來換去）
+const FOUP_FAR = { high: 40, mid: 28, low: 18 };
+let foupLodTime = -1e9;
+function updateFoupLod(now) {
+  if (now - foupLodTime < 300) return; foupLodTime = now;
+  const r = FOUP_FAR[GFX.level] || 28, cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+  for (const f of FB.foups.values()) {
+    const e = f.worldMatrix && f.worldMatrix.elements; if (!e || e[15] === 0) continue;
+    const d = Math.hypot(e[12] - cx, e[13] - cy, e[14] - cz), want = f.lodFar ? d > r - 4 : d > r + 4;
+    const very = d > 2 * r;
+    if (want !== !!f.lodFar || very !== !!f.lodVeryFar) { f.lodFar = want; f.lodVeryFar = very; setFoupMatrix(f, f.worldMatrix); }
+  }
+}
 function updateDetailedWafers() {
   if (BENCH) return;
+  updateFoupLod(performance.now());
   const bank=waferDetail, now=performance.now(), power=GFX.level==='power' || GFX.level==='low';
   if (now-bank.time > 250) {
     bank.time=now;

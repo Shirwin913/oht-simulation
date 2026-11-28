@@ -164,7 +164,7 @@ const inJunctionRun = (sg, d) => (junctionRuns.get(sg.id) || []).some(([a, b]) =
     sweepMesh(rect(0, 0.274, 0.025, 0.01), mat(0x1b1f24, { roughness: 0.8 }), false, { offset: false });   // 供電線（藏在頂板下面 2 cm：不能也往鏡頭拉，不然遠一點看會透出頂板，變成一條黑線）
   }
   const N = samples.length;
-  const grooveMat = mat(0x8a939b, { metalness: 0.5 });
+  const grooveMat = mat(0x8a939b, { metalness: 0.5 }); grooveMat.userData.fineDetail = true;   // 外側溝槽：只在「高」畫質畫（scene.js applyGfx；遠看看不出來，卻有幾十萬個三角形）
   const parts = [ // [幾何, y 偏移, 側向偏移, 是否套用軌道顏色, 材質]
     [new THREE.BoxGeometry(1, 0.018, 0.62), 0.293, 0, true],       // 頂板
     [new THREE.BoxGeometry(1, 0.452, 0.023), 0.076, 0.2985, true],      // 側壁（內面 ±0.287，外面 ±0.31）

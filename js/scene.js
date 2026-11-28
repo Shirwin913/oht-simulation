@@ -98,6 +98,7 @@ function applyGfx(level, why) {
   if (wasShadow !== sun.castShadow || wasSoft !== L.soft)                      // 陰影開關、種類改了：材質要重新編譯
     scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); });
   renderer.shadowMap.needsUpdate = true;
+  scene.traverse(o => { if (o.isInstancedMesh && o.material && o.material.userData && o.material.userData.fineDetail) o.visible = level === 'high'; });   // 軌道外側溝槽等細節：只在「高」畫質畫
   if (why && typeof log === 'function') log(why);
   const sel = document.getElementById('gfxLevel'); if (sel) sel.value = GFX.pref;
 }

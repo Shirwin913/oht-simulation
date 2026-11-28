@@ -58,7 +58,7 @@ function stepMachinePort(p, dt) {
       if (p.dock <= 0) { f.state='ready'; p.processStage='待取貨'; }
     }
   }
-  if (p.deck) p.deck.position.z = -p.dock*DOCK_DISTANCE;
+  if (p.deck) p.deck.setZ(-p.dock*DOCK_DISTANCE);
   if (before[0]!==p.dock || before[1]!==f.doorOpen || before[2]!==f.waferCount) placeFoupAt(f,p);
 }
 // 開場已有的在製品也走完整對接流程，保留原先隨機的剩餘加工時間。
